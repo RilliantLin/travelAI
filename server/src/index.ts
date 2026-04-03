@@ -33,6 +33,7 @@ app.get("/api", (req, res) => {
       restaurants: "/api/restaurants",
       flights: "/api/flights",
       hotels: "/api/hotels",
+      agent: "/api/agent",
     },
   });
 });

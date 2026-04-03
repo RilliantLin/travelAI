@@ -8,8 +8,8 @@ export const config = {
     url: process.env.REDIS_URL || "redis://localhost:6379",
   },
   apis: {
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
+    zhipu: {
+      apiKey: process.env.ZHIPU_API_KEY,
     },
     qweather: {
       apiKey: process.env.QWEATHER_API_KEY,
