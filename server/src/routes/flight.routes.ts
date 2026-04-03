@@ -1,24 +1,32 @@
-import { Router, Request, Response } from "express";
+import { Router } from 'express';
+import {
+  searchFlights,
+  getFlightDetail,
+  getFlightPriceComparison,
+  getAirlines,
+  getAirports,
+} from '../controllers/flight.controller';
 
 const router = Router();
 
-router.get("/", (req: Request, res: Response) => {
+router.get('/', (req, res) => {
   res.json({
-    message: "Flight API",
+    message: 'Flight API',
     endpoints: {
-      "GET /": "API info",
-      "GET /search": "Search flights",
+      'GET /': 'API info',
+      'GET /search': 'Search flights',
+      'GET /airlines': 'Get airlines list',
+      'GET /airports': 'Get airports list',
+      'GET /:id': 'Get flight detail',
+      'GET /:id/compare': 'Get price comparison',
     },
   });
 });
 
-router.get("/search", (req: Request, res: Response) => {
-  const { origin, destination, date, returnDate, passengers } = req.query;
-  res.json({
-    message: "Search flights",
-    params: { origin, destination, date, returnDate, passengers },
-    data: [],
-  });
-});
+router.get('/search', searchFlights);
+router.get('/airlines', getAirlines);
+router.get('/airports', getAirports);
+router.get('/:id/compare', getFlightPriceComparison);
+router.get('/:id', getFlightDetail);
 
 export default router;
