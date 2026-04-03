@@ -1,9 +1,8 @@
 import axios from 'axios';
 import redis from '../../config/redis';
+import { config } from '../../config';
 
 const AMAP_API_URL = 'https://restapi.amap.com/v3';
-const AMAP_API_KEY = process.env.AMAP_API_KEY || '';
-const AMAP_WEB_KEY = process.env.AMAP_WEB_KEY || '';
 
 interface AMapGeocodeResponse {
   status: string;
@@ -114,7 +113,7 @@ export class AMapApi {
       const response = await axios.get<AMapGeocodeResponse>(`${AMAP_API_URL}/geocode/geo`, {
         params: {
           address,
-          key: AMAP_API_KEY,
+          key: config.apis.amap.apiKey,
         },
       });
 
@@ -145,6 +144,7 @@ export class AMapApi {
     const cached = await this.getCachedData(cacheKey);
 
     if (cached) {
+      console.log('[AMAP API] Returning cached result for key:', cacheKey);
       return JSON.parse(cached);
     }
 
@@ -152,7 +152,7 @@ export class AMapApi {
       const params: Record<string, any> = {
         keywords,
         location,
-        key: AMAP_API_KEY,
+        key: config.apis.amap.apiKey,
         offset: pageSize,
         page,
         extensions: 'all',
@@ -166,11 +166,16 @@ export class AMapApi {
         params.radius = radius;
       }
 
+      console.log('[AMAP API] Searching POI with params:', params);
+      
       const response = await axios.get<AMapPOISearchResponse>(`${AMAP_API_URL}/place/around`, {
         params,
       });
 
+      console.log('[AMAP API] Response status:', response.data.status, 'count:', response.data.count, 'pois length:', response.data.pois?.length);
+
       if (response.data.status !== '1') {
+        console.error('[AMAP API] Search failed:', response.data);
         return null;
       }
 
@@ -194,7 +199,7 @@ export class AMapApi {
       const response = await axios.get<AMapPOIDetailResponse>(`${AMAP_API_URL}/place/detail`, {
         params: {
           id,
-          key: AMAP_API_KEY,
+          key: config.apis.amap.apiKey,
           extensions: 'all',
         },
       });
@@ -231,7 +236,7 @@ export class AMapApi {
           params: {
             origin,
             destination,
-            key: AMAP_API_KEY,
+            key: config.apis.amap.apiKey,
             extensions: 'all',
           },
         }
@@ -260,7 +265,7 @@ export class AMapApi {
           origins,
           destination,
           type,
-          key: AMAP_API_KEY,
+          key: config.apis.amap.apiKey,
         },
       });
 

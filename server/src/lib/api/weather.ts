@@ -1,9 +1,9 @@
 import axios from 'axios';
 import { WeatherInfo, WeatherDaily, WeatherForecast } from '../../types/weather';
 import redis from '../../config/redis';
+import { config } from '../../config';
 
 const QWEATHER_API_URL = 'https://devapi.qweather.com/v7';
-const QWEATHER_API_KEY = process.env.QWEATHER_API_KEY || '';
 
 interface QWeatherNowResponse {
   code: string;
@@ -78,7 +78,7 @@ export class WeatherApi {
       const response = await axios.get(`${QWEATHER_API_URL}/geo/lookup`, {
         params: {
           location,
-          key: QWEATHER_API_KEY,
+          key: config.apis.qweather.apiKey,
         },
       });
 
@@ -108,7 +108,7 @@ export class WeatherApi {
       const response = await axios.get<QWeatherNowResponse>(`${QWEATHER_API_URL}/weather/now`, {
         params: {
           location: locationId,
-          key: QWEATHER_API_KEY,
+          key: config.apis.qweather.apiKey,
         },
       });
 
@@ -168,7 +168,7 @@ export class WeatherApi {
         {
           params: {
             location: locationId,
-            key: QWEATHER_API_KEY,
+            key: config.apis.qweather.apiKey,
           },
         }
       );
