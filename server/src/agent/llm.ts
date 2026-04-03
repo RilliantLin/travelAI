@@ -46,17 +46,26 @@ export function getStructuredChatModel(): ChatZhipuAI {
   return _structuredChatModel;
 }
 
-export const chatModel = {
+export const chatModel: {
+  invoke: (...args: Parameters<ChatZhipuAI["invoke"]>) => ReturnType<ChatZhipuAI["invoke"]>;
+  stream: (...args: Parameters<ChatZhipuAI["stream"]>) => ReturnType<ChatZhipuAI["stream"]>;
+} = {
   invoke: (...args: Parameters<ChatZhipuAI["invoke"]>) => getChatModel().invoke(...args),
   stream: (...args: Parameters<ChatZhipuAI["stream"]>) => getChatModel().stream(...args),
 };
 
-export const streamingChatModel = {
+export const streamingChatModel: {
+  invoke: (...args: Parameters<ChatZhipuAI["invoke"]>) => ReturnType<ChatZhipuAI["invoke"]>;
+  stream: (...args: Parameters<ChatZhipuAI["stream"]>) => ReturnType<ChatZhipuAI["stream"]>;
+} = {
   invoke: (...args: Parameters<ChatZhipuAI["invoke"]>) => getStreamingChatModel().invoke(...args),
   stream: (...args: Parameters<ChatZhipuAI["stream"]>) => getStreamingChatModel().stream(...args),
 };
 
-export const structuredChatModel = {
+export const structuredChatModel: {
+  invoke: (...args: Parameters<ChatZhipuAI["invoke"]>) => ReturnType<ChatZhipuAI["invoke"]>;
+  stream: (...args: Parameters<ChatZhipuAI["stream"]>) => ReturnType<ChatZhipuAI["stream"]>;
+} = {
   invoke: (...args: Parameters<ChatZhipuAI["invoke"]>) => getStructuredChatModel().invoke(...args),
   stream: (...args: Parameters<ChatZhipuAI["stream"]>) => getStructuredChatModel().stream(...args),
 };

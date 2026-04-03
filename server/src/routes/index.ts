@@ -8,6 +8,7 @@ import restaurantRoutes from "./restaurant.routes";
 import flightRoutes from "./flight.routes";
 import hotelRoutes from "./hotel.routes";
 import agentRoutes from "./agent.routes";
+import routeRoutes from "./route.routes";
 
 const router = Router();
 
@@ -19,6 +20,7 @@ router.use("/attractions", attractionRoutes);
 router.use("/restaurants", restaurantRoutes);
 router.use("/flights", flightRoutes);
 router.use("/hotels", hotelRoutes);
+router.use("/routes", routeRoutes);
 router.use("/agent", agentRoutes);
 
 export default router;
