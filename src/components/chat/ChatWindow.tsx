@@ -1,13 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { MessageBubble, ChatInput, QuickActions } from ".";
-import { sendStreamMessage } from "@/lib/api/chat";
+import { MessageBubble, ChatInput, QuickActions, ItineraryPreviewCard } from ".";
+import { sendStreamMessage, detectIntent } from "@/lib/api/chat";
+import { createItinerary } from "@/lib/api/itinerary";
 import type { ChatMessage } from "@/lib/api/chat";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "travel-chat-history";
+
+const DEMO_USER_ID = "demo-user-001";
+
+interface ItineraryCardData {
+  destination: string;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  itineraryId?: string;
+}
 
 function loadHistory(): ChatMessage[] {
   if (typeof window === "undefined") return [];
@@ -24,8 +35,38 @@ function saveHistory(messages: ChatMessage[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
   } catch {
-    // ignore
   }
+}
+
+function extractItineraryInfo(
+  userMessage: string,
+  assistantMessage: string
+): Partial<ItineraryCardData> | null {
+  const combined = `${userMessage} ${assistantMessage}`.toLowerCase();
+
+  const cityMatch = combined.match(/(?:去|到|前往|目的地|游玩)[\s]*([\u4e00-\u9fa5]{2,10})(?:\s|的|玩|旅|游|天|日|$)/);
+  const daysMatch = combined.match(/(\d+)\s*(?:天|日|晚)/);
+  const dateMatch = combined.match(/(\d{4}[-/]\d{1,2}[-/]\d{1,2})/g);
+
+  const destination = cityMatch?.[1];
+  const totalDays = daysMatch ? parseInt(daysMatch[1], 10) : undefined;
+
+  if (!destination && !totalDays) return null;
+
+  return {
+    destination: destination || "旅行目的地",
+    totalDays: totalDays || 3,
+    startDate: dateMatch?.[0],
+    endDate: dateMatch?.[1],
+  };
+}
+
+function generateDemoDates(totalDays: number = 3): { startDate: string; endDate: string } {
+  const now = new Date();
+  const start = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + (totalDays - 1) * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().split("T")[0];
+  return { startDate: fmt(start), endDate: fmt(end) };
 }
 
 interface ChatWindowProps {
@@ -36,6 +77,7 @@ export function ChatWindow({ className }: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
+  const [itineraryCards, setItineraryCards] = useState<Map<number, ItineraryCardData>>(new Map());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const initialized = useRef(false);
 
@@ -51,7 +93,7 @@ export function ChatWindow({ className }: ChatWindowProps) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, itineraryCards]);
 
   const handleSend = useCallback(
     async (content: string) => {
@@ -62,13 +104,15 @@ export function ChatWindow({ className }: ChatWindowProps) {
       setIsStreaming(true);
       setStreamingContent("");
 
+      const assistantIndex = updatedMessages.length;
+
       await sendStreamMessage(
         content,
         messages,
         (chunk) => {
           setStreamingContent((prev) => prev + chunk);
         },
-        (fullMessage) => {
+        async (fullMessage) => {
           const assistantMessage: ChatMessage = {
             role: "assistant",
             content: fullMessage,
@@ -78,6 +122,47 @@ export function ChatWindow({ className }: ChatWindowProps) {
           saveHistory(finalMessages);
           setIsStreaming(false);
           setStreamingContent("");
+
+          try {
+            const intentResult = await detectIntent(content);
+            if (intentResult.intent === "plan_itinerary") {
+              const info = extractItineraryInfo(content, fullMessage);
+              if (info) {
+                const dates = info.startDate && info.endDate
+                  ? { startDate: info.startDate, endDate: info.endDate }
+                  : generateDemoDates(info.totalDays);
+
+                let itineraryId: string | undefined;
+
+                try {
+                  const itinerary = await createItinerary({
+                    destination: info.destination || "旅行目的地",
+                    startDate: dates.startDate,
+                    endDate: dates.endDate,
+                    userId: DEMO_USER_ID,
+                    title: `${info.destination || ""}行程规划`,
+                    description: fullMessage.slice(0, 200),
+                  });
+                  itineraryId = itinerary.id;
+                } catch {
+                  itineraryId = undefined;
+                }
+
+                setItineraryCards((prev) => {
+                  const next = new Map(prev);
+                  next.set(assistantIndex, {
+                    destination: info.destination || "旅行目的地",
+                    startDate: dates.startDate,
+                    endDate: dates.endDate,
+                    totalDays: info.totalDays || 3,
+                    itineraryId,
+                  });
+                  return next;
+                });
+              }
+            }
+          } catch {
+          }
         },
         () => {
           setIsStreaming(false);
@@ -90,6 +175,7 @@ export function ChatWindow({ className }: ChatWindowProps) {
 
   const handleClear = useCallback(() => {
     setMessages([]);
+    setItineraryCards(new Map());
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
@@ -141,13 +227,17 @@ export function ChatWindow({ className }: ChatWindowProps) {
           )}
 
           {allMessages.map((msg, i) => (
-            <MessageBubble
-              key={i}
-              message={msg}
-              isStreaming={
-                isStreaming && i === allMessages.length - 1 && msg.role === "assistant"
-              }
-            />
+            <div key={i}>
+              <MessageBubble
+                message={msg}
+                isStreaming={
+                  isStreaming && i === allMessages.length - 1 && msg.role === "assistant"
+                }
+              />
+              {msg.role === "assistant" && itineraryCards.has(i) && (
+                <ItineraryPreviewCard {...itineraryCards.get(i)!} />
+              )}
+            </div>
           ))}
 
           <div ref={messagesEndRef} />

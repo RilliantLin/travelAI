@@ -1,17 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, use } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapView } from '@/components/map';
 import { MarkerData } from '@/types/map';
 import { ArrowLeft, MapPin, Navigation, Layers } from 'lucide-react';
 import Link from 'next/link';
 
 interface MapPageProps {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }
 
 export default function ItineraryMapPage({ params }: MapPageProps) {
-  const { id } = use(params);
+  const { id } = params;
   const [markers, setMarkers] = useState<MarkerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);

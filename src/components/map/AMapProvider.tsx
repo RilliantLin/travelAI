@@ -1,7 +1,6 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import AMapLoader from '@amap/amap-jsapi-loader';
 import { MapConfig, MapOptions, MapContextValue, MarkerData, PolylineData, MapBounds } from '@/types/map';
 
 declare global {
@@ -38,29 +37,33 @@ export function AMapProvider({ config, securityJsCode, children }: AMapProviderP
   const mapRef = useRef<any>(null);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
     if (securityJsCode) {
       window._AMapSecurityConfig = {
         securityJsCode: securityJsCode,
       };
     }
 
-    AMapLoader.load({
-      key: config.apiKey,
-      version: config.version || '2.0',
-      plugins: config.plugins || ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geolocation', 'AMap.Marker', 'AMap.Polyline'],
-    })
-      .then((AMap) => {
-        setIsLoaded(true);
-        window.AMap = AMap;
-      })
-      .catch((e) => {
-        setError(new Error(`Failed to load AMap: ${e.message}`));
+    import('@amap/amap-jsapi-loader').then(({ default: AMapLoader }) => {
+      return AMapLoader.load({
+        key: config.apiKey,
+        version: config.version || '2.0',
+        plugins: config.plugins || ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geolocation', 'AMap.Marker', 'AMap.Polyline'],
       });
+    }).then((AMap: any) => {
+      setIsLoaded(true);
+      window.AMap = AMap;
+    }).catch((e: Error) => {
+      setError(new Error(`Failed to load AMap: ${e.message}`));
+    });
 
     return () => {
+      const markers = markersRef.current;
+      const polylines = polylinesRef.current;
       mapRef.current?.destroy();
-      markersRef.current.clear();
-      polylinesRef.current.clear();
+      markers.clear();
+      polylines.clear();
     };
   }, [config.apiKey, config.version, config.plugins, securityJsCode]);
 

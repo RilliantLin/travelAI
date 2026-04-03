@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { MapPin, UtensCrossed, Hotel, Plane, CloudSun, Calculator, Settings } from "lucide-react";
+import { MapPin, UtensilsCrossed, Hotel, Plane, CloudSun, Calculator, Settings } from "lucide-react";
 
 const QUICK_ACTIONS = [
   {
@@ -21,7 +21,7 @@ const QUICK_ACTIONS = [
   {
     id: "search_restaurants",
     label: "美食推荐",
-    icon: UtensCrossed,
+    icon: UtensilsCrossed,
     prompt: "推荐一些当地美食",
     color: "text-orange-600 bg-orange-50 hover:bg-orange-100 border-orange-200",
   },

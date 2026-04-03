@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { savePreference, getPreference } from "@/lib/api/preference";
+import { savePreference, getPreference, getLocalPreference } from "@/lib/api/preference";
 import {
   PreferenceFormData,
   TRAVEL_STYLES,
@@ -52,7 +52,8 @@ function validateForm(data: PreferenceFormData): FormErrors {
     errors.budgetMax = "最高预算不能低于最低预算";
   }
 
-  if (data.travelerCount < 1 || data.travelerCount > 20) {
+  const count = data.travelerCount ?? 1;
+  if (count < 1 || count > 20) {
     errors.travelerCount = "出行人数需在 1-20 人之间";
   }
 
@@ -62,15 +63,44 @@ function validateForm(data: PreferenceFormData): FormErrors {
 export default function PreferencesPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [formData, setFormData] = useState<PreferenceFormData>(DEFAULT_FORM);
+  const [formData, setFormData] = useState<PreferenceFormData>(() => getLocalPreference());
 
   useEffect(() => {
-    loadPreference();
+    const localData = getLocalPreference();
+    if (Object.keys(localData).some(
+      (key) => localData[key as keyof PreferenceFormData] !== undefined &&
+        localData[key as keyof PreferenceFormData] !== DEFAULT_FORM[key as keyof PreferenceFormData] &&
+        !(Array.isArray(localData[key as keyof PreferenceFormData]) && (localData[key as keyof PreferenceFormData] as unknown[]).length === 0)
+    )) {
+      setSyncing(true);
+      getPreference(DEMO_USER_ID)
+        .then((preference) => {
+          if (preference) {
+            setFormData({
+              budgetMin: preference.budgetMin ?? undefined,
+              budgetMax: preference.budgetMax ?? undefined,
+              currency: preference.currency || "CNY",
+              travelerCount: preference.travelerCount ?? 1,
+              travelStyle: (preference.travelStyle as PreferenceFormData["travelStyle"]) || "moderate",
+              dietaryRestrictions: preference.dietaryRestrictions || [],
+              preferredActivities: preference.preferredActivities || [],
+              transportPreference: (preference.transportPreference as PreferenceFormData["transportPreference"]) || "plane",
+              accommodationType: (preference.accommodationType as PreferenceFormData["accommodationType"]) || "hotel",
+              accessibilityNeeds: preference.accessibilityNeeds || false,
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => setSyncing(false));
+    } else {
+      loadPreference();
+    }
   }, []);
 
   useEffect(() => {
@@ -152,17 +182,6 @@ export default function PreferencesPage() {
     });
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
-          <p className="text-sm text-gray-500">加载偏好设置...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="mx-auto max-w-2xl px-4">
@@ -173,10 +192,18 @@ export default function PreferencesPage() {
               设置您的旅行偏好，我们将为您提供更个性化的推荐
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleReset}>
-            <RotateCcw className="mr-1 h-3.5 w-3.5" />
-            重置
-          </Button>
+          <div className="flex items-center gap-2">
+            {syncing && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                同步中...
+              </span>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleReset}>
+              <RotateCcw className="mr-1 h-3.5 w-3.5" />
+              重置
+            </Button>
+          </div>
         </div>
 
         {message && (

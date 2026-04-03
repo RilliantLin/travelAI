@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, Calendar, MapPinned, Wallet, Plane, Hotel } from "lucide-react";
 import {
@@ -25,11 +25,11 @@ const TABS = [
 ];
 
 interface ItineraryPageProps {
-  params: Promise<{ id: string }>;
+  params: { id: string };
 }
 
 export default function ItineraryPage({ params }: ItineraryPageProps) {
-  const { id } = use(params);
+  const { id } = params;
   const [itinerary, setItinerary] = useState<Itinerary | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("schedule");

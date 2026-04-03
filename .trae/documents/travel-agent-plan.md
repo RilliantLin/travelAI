@@ -110,12 +110,30 @@ interface UserPreference {
 ## 五、页面与组件设计
 
 ### 5.1 页面结构
+
 ```
-/                    → 首页（欢迎 + 开始规划）
-/chat                → 聊天主界面
-/itinerary/:id       → 行程详情页
-/profile             → 用户偏好设置
+/                        → 首页（AI 聊天助手 ChatWindow）
+/profile/preferences     → 用户偏好设置页（表单验证 + 重置）
+/itinerary/:id           → 行程详情页（5 Tab：日程 / 地图 / 预算 / 航班 / 酒店）
+/itinerary/:id/map       → 地图全览子页面
 ```
+
+**顶部导航栏（Navbar）：**
+
+| 路径 | 名称 | 说明 |
+|------|------|------|
+| `/` | AI 助手 | 首页，AI 对话界面 |
+| `/profile/preferences` | 偏好设置 | 旅行偏好配置表单 |
+
+**行程详情页 Tab 子导航：**
+
+| Tab | 名称 | 内容组件 |
+|-----|------|---------|
+| schedule | 日程安排 | ScheduleTimeline 时间线 |
+| map | 地图视图 | MapView 地图 + 地点列表 |
+| budget | 费用预算 | BudgetCard 预算卡片 |
+| flights | 航班信息 | FlightSearchPanel 搜索面板 |
+| hotels | 酒店推荐 | HotelSearchPanel 搜索面板 |
 
 ### 5.2 核心组件
 - `ChatWindow` - 聊天窗口

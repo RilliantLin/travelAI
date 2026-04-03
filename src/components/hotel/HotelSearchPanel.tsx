@@ -128,19 +128,23 @@ export function HotelFilter({ onFilterChange }: HotelFilterProps) {
 
 interface HotelSearchPanelProps {
   location?: string;
+  destination?: string;
   checkIn?: string;
   checkOut?: string;
   onHotelSelect?: (hotel: Hotel) => void;
+  onSelect?: (hotel: Hotel) => void;
 }
 
 export function HotelSearchPanel({
   location = '',
+  destination = '',
   checkIn = '',
   checkOut = '',
   onHotelSelect,
+  onSelect,
 }: HotelSearchPanelProps) {
   const [searchParams, setSearchParams] = useState<HotelSearchParams>({
-    location,
+    location: location || destination,
     checkIn,
     checkOut,
   });
@@ -218,7 +222,7 @@ export function HotelSearchPanel({
           {loading ? (
             <div className="text-center py-12 text-gray-500">搜索中...</div>
           ) : searched ? (
-            <HotelList hotels={hotels} onSelect={onHotelSelect} />
+            <HotelList hotels={hotels} onSelect={onSelect || onHotelSelect} />
           ) : (
             <div className="text-center py-12 text-gray-500">
               请输入目的地、入住和退房日期搜索酒店

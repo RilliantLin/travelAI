@@ -139,19 +139,23 @@ interface FlightSearchPanelProps {
   origin?: string;
   destination?: string;
   date?: string;
-  onFlightSelect?: (flight: Flight) => void;
+  startDate?: string;
+  endDate?: string;
+  onSelect?: (flight: Flight) => void;
 }
 
 export function FlightSearchPanel({
   origin = '',
   destination = '',
   date = '',
-  onFlightSelect,
+  startDate,
+  endDate,
+  onSelect,
 }: FlightSearchPanelProps) {
   const [searchParams, setSearchParams] = useState<FlightSearchParams>({
     origin,
     destination,
-    departureDate: date,
+    departureDate: date || startDate || '',
   });
   const [flights, setFlights] = useState<Flight[]>([]);
   const [loading, setLoading] = useState(false);
@@ -228,7 +232,7 @@ export function FlightSearchPanel({
           {loading ? (
             <div className="text-center py-12 text-gray-500">搜索中...</div>
           ) : searched ? (
-            <FlightList flights={flights} onSelect={onFlightSelect} showDetails />
+            <FlightList flights={flights} onSelect={onSelect} showDetails />
           ) : (
             <div className="text-center py-12 text-gray-500">
               请输入出发城市、到达城市和日期搜索航班
