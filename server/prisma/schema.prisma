@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  preferences UserPreference?
+  itineraries Itinerary[]
+}
+
+model UserPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budget          String?
+  travelStyle     String?
+  preferredActivities String[]
+  foodPreferences String[]
+  accommodationType String?
+  transportPreference String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Itinerary {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  destination String
+  startDate   DateTime
+  endDate     DateTime
+  description String?
+  totalBudget Float?
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  days        ItineraryDay[]
+  flights     Flight[]
+  hotels      Hotel[]
+}
+
+model ItineraryDay {
+  id           String   @id @default(cuid())
+  itineraryId  String
+  itinerary    Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  dayNumber    Int
+  date         DateTime
+  summary      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  activities   Activity[]
+  meals        Meal[]
+  accommodation Accommodation?
+}
+
+model Activity {
+  id              String   @id @default(cuid())
+  itineraryDayId  String
+  itineraryDay    ItineraryDay @relation(fields: [itineraryDayId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  startTime       String?
+  endTime         String?
+  estimatedCost   Float?
+  category        String?
+  rating          Float?
+  imageUrl        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Meal {
+  id              String   @id @default(cuid())
+  itineraryDayId  String
+  itineraryDay    ItineraryDay @relation(fields: [itineraryDayId], references: [id], onDelete: Cascade)
+  name            String
+  type            String
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  estimatedCost   Float?
+  cuisine         String?
+  rating          Float?
+  imageUrl        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Accommodation {
+  id              String   @id @default(cuid())
+  itineraryDayId  String   @unique
+  itineraryDay    ItineraryDay @relation(fields: [itineraryDayId], references: [id], onDelete: Cascade)
+  name            String
+  type            String?
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  checkIn         String?
+  checkOut        String?
+  estimatedCost   Float?
+  rating          Float?
+  imageUrl        String?
+  amenities       String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Flight {
+  id              String   @id @default(cuid())
+  itineraryId     String
+  itinerary       Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  airline         String
+  flightNumber    String
+  departureCity   String
+  arrivalCity     String
+  departureTime   DateTime
+  arrivalTime     DateTime
+  price           Float?
+  bookingUrl      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Hotel {
+  id              String   @id @default(cuid())
+  itineraryId     String
+  itinerary       Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  name            String
+  location        String?
+  latitude        Float?
+  longitude       Float?
+  checkIn         DateTime?
+  checkOut        DateTime?
+  pricePerNight   Float?
+  rating          Float?
+  imageUrl        String?
+  bookingUrl      String?
+  amenities       String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
