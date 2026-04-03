@@ -1,8 +1,10 @@
-import { Router, Request, Response } from "express";
+import { Router } from "express";
+import { createUser, getUser, updateUser, deleteUser } from "../controllers/user.controller";
+import { getPreference, createOrUpdatePreference } from "../controllers/preference.controller";
 
 const router = Router();
 
-router.get("/", (req: Request, res: Response) => {
+router.get("/", (req, res) => {
   res.json({
     message: "User API",
     endpoints: {
@@ -17,28 +19,11 @@ router.get("/", (req: Request, res: Response) => {
   });
 });
 
-router.get("/:id", (req: Request, res: Response) => {
-  res.json({ message: `Get user ${req.params.id}`, data: null });
-});
-
-router.post("/", (req: Request, res: Response) => {
-  res.status(201).json({ message: "Create user", data: req.body });
-});
-
-router.put("/:id", (req: Request, res: Response) => {
-  res.json({ message: `Update user ${req.params.id}`, data: req.body });
-});
-
-router.delete("/:id", (req: Request, res: Response) => {
-  res.json({ message: `Delete user ${req.params.id}` });
-});
-
-router.get("/:id/preferences", (req: Request, res: Response) => {
-  res.json({ message: `Get preferences for user ${req.params.id}`, data: null });
-});
-
-router.put("/:id/preferences", (req: Request, res: Response) => {
-  res.json({ message: `Update preferences for user ${req.params.id}`, data: req.body });
-});
+router.post("/", createUser);
+router.get("/:id", getUser);
+router.put("/:id", updateUser);
+router.delete("/:id", deleteUser);
+router.get("/:id/preferences", getPreference);
+router.put("/:id/preferences", createOrUpdatePreference);
 
 export default router;

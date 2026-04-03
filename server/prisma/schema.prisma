@@ -22,12 +22,16 @@ model UserPreference {
   id              String   @id @default(cuid())
   userId          String   @unique
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  budget          String?
+  budgetMin       Float?
+  budgetMax       Float?
+  currency        String   @default("CNY")
+  travelerCount   Int      @default(1)
   travelStyle     String?
+  dietaryRestrictions String[]
   preferredActivities String[]
-  foodPreferences String[]
-  accommodationType String?
   transportPreference String?
+  accommodationType String?
+  accessibilityNeeds Boolean @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
