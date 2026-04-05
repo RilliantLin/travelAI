@@ -45,7 +45,7 @@ export function MapView({
       config={{ apiKey: AMAP_API_KEY }}
       securityJsCode={AMAP_SECURITY_CODE}
     >
-      <div className={`relative rounded-xl overflow-hidden border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+      <div className={`relative overflow-hidden border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'rounded-xl'}`} style={{ height: isFullscreen ? '100%' : height }}>
         <Map
           options={{
             zoom: currentZoom,

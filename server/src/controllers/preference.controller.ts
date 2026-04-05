@@ -50,9 +50,9 @@ export const getPreference = async (req: Request, res: Response) => {
     });
 
     if (!preference) {
-      return res.status(404).json({
-        success: false,
-        message: "用户偏好未设置",
+      return res.json({
+        success: true,
+        message: "用户偏好未设置，返回默认值",
         data: null,
       });
     }

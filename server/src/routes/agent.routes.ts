@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { travelAgent, ChatMessage } from "../agent";
+import { planAgent } from "../agent/plan-agent";
 
 const router = Router();
 
@@ -10,6 +11,7 @@ router.get("/", (req: Request, res: Response) => {
       "POST /chat": "Send a message to the AI agent",
       "POST /chat/stream": "Stream response from the AI agent",
       "POST /intent": "Detect intent from user input",
+      "POST /plan/stream": "Stream plan response with tool calling",
     },
   });
 });
@@ -63,6 +65,50 @@ router.post("/chat/stream", async (req: Request, res: Response) => {
       success: false,
       error: "Failed to process streaming message",
     });
+  }
+});
+
+router.post("/plan/stream", async (req: Request, res: Response) => {
+  try {
+    const { message, history = [], itineraryContext, itineraryId } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    const stream = planAgent.planStream(
+      message,
+      history as ChatMessage[],
+      itineraryContext,
+      null
+    );
+
+    for await (const event of stream) {
+      const eventData = JSON.stringify(event);
+      res.write(`data: ${eventData}\n\n`);
+    }
+
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (error) {
+    console.error("Plan stream error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: "Failed to process plan stream",
+      });
+    } else {
+      res.write(
+        `data: ${JSON.stringify({ type: "text", content: "\n\n抱歉，处理出错了。" })}\n\n`
+      );
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
   }
 });
 

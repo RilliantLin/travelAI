@@ -138,9 +138,10 @@ export class AMapApi {
     types?: string,
     radius?: number,
     page: number = 1,
-    pageSize: number = 20
+    pageSize: number = 20,
+    city?: string
   ): Promise<AMapPOISearchResponse | null> {
-    const cacheKey = `poi:search:${keywords}:${location}:${types}:${radius}:${page}:${pageSize}`;
+    const cacheKey = `poi:search:${keywords}:${location}:${types}:${radius}:${page}:${pageSize}:${city}`;
     const cached = await this.getCachedData(cacheKey);
 
     if (cached) {
@@ -151,26 +152,31 @@ export class AMapApi {
     try {
       const params: Record<string, any> = {
         keywords,
-        location,
         key: config.apis.amap.apiKey,
         offset: pageSize,
         page,
         extensions: 'all',
       };
 
-      if (types) {
-        params.types = types;
+      if (types) params.types = types;
+
+      const useAroundSearch = location && location.trim() !== '';
+
+      if (useAroundSearch) {
+        params.location = location;
+        if (radius) params.radius = radius;
+      } else if (city) {
+        params.city = city;
+        params.citylimit = true;
       }
 
-      if (radius) {
-        params.radius = radius;
-      }
+      const endpoint = useAroundSearch ? 'place/around' : 'place/text';
+      console.log(`[AMAP API] Searching POI via /${endpoint} with params:`, params);
 
-      console.log('[AMAP API] Searching POI with params:', params);
-      
-      const response = await axios.get<AMapPOISearchResponse>(`${AMAP_API_URL}/place/around`, {
-        params,
-      });
+      const response = await axios.get<AMapPOISearchResponse>(
+        `${AMAP_API_URL}/${endpoint}`,
+        { params }
+      );
 
       console.log('[AMAP API] Response status:', response.data.status, 'count:', response.data.count, 'pois length:', response.data.pois?.length);
 

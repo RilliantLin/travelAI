@@ -92,6 +92,7 @@ export interface MapContextValue {
   map: any;
   isLoaded: boolean;
   error: Error | null;
+  registerMap: (map: any) => void;
   setCenter: (lnglat: [number, number]) => void;
   setZoom: (zoom: number) => void;
   setBounds: (bounds: MapBounds) => void;

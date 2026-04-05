@@ -3,7 +3,11 @@ import { WeatherInfo, WeatherDaily, WeatherForecast } from '../../types/weather'
 import redis from '../../config/redis';
 import { config } from '../../config';
 
-const QWEATHER_API_URL = 'https://devapi.qweather.com/v7';
+function getQWeatherBaseUrl(): string | null {
+  const host = config.apis.qweather.apiHost;
+  if (!host) return null;
+  return `https://${host}`;
+}
 
 interface QWeatherNowResponse {
   code: string;
@@ -67,6 +71,9 @@ export class WeatherApi {
   }
 
   async getLocationId(location: string): Promise<string> {
+    const baseUrl = getQWeatherBaseUrl();
+    if (!baseUrl) return location;
+
     const cacheKey = `location_id:${location}`;
     const cached = await this.getCachedData(cacheKey);
     
@@ -75,7 +82,8 @@ export class WeatherApi {
     }
 
     try {
-      const response = await axios.get(`${QWEATHER_API_URL}/geo/lookup`, {
+      const geoUrl = `${baseUrl}/geo/v2/city/lookup`;
+      const response = await axios.get(geoUrl, {
         params: {
           location,
           key: config.apis.qweather.apiKey,
@@ -89,13 +97,16 @@ export class WeatherApi {
       }
 
       return location;
-    } catch (error) {
-      console.error('Get location ID error:', error);
+    } catch (error: any) {
+      console.error('Get location ID error:', error?.message || error);
       return location;
     }
   }
 
   async getCurrentWeather(location: string): Promise<WeatherInfo | null> {
+    const baseUrl = getQWeatherBaseUrl();
+    if (!baseUrl) return null;
+
     const locationId = await this.getLocationId(location);
     const cacheKey = `weather:current:${locationId}`;
     const cached = await this.getCachedData(cacheKey);
@@ -105,7 +116,7 @@ export class WeatherApi {
     }
 
     try {
-      const response = await axios.get<QWeatherNowResponse>(`${QWEATHER_API_URL}/weather/now`, {
+      const response = await axios.get<QWeatherNowResponse>(`${baseUrl}/v7/weather/now`, {
         params: {
           location: locationId,
           key: config.apis.qweather.apiKey,
@@ -153,6 +164,9 @@ export class WeatherApi {
   }
 
   async getWeatherForecast(location: string, days: number = 7): Promise<WeatherForecast | null> {
+    const baseUrl = getQWeatherBaseUrl();
+    if (!baseUrl) return null;
+
     const locationId = await this.getLocationId(location);
     const cacheKey = `weather:forecast:${locationId}:${days}`;
     const cached = await this.getCachedData(cacheKey);
@@ -163,8 +177,9 @@ export class WeatherApi {
 
     try {
       const endpoint = days <= 3 ? '3d' : days <= 7 ? '7d' : '15d';
+      const forecastUrl = `${baseUrl}/v7/weather/${endpoint}`;
       const response = await axios.get<QWeatherDailyResponse>(
-        `${QWEATHER_API_URL}/weather/${endpoint}`,
+        forecastUrl,
         {
           params: {
             location: locationId,
@@ -218,8 +233,8 @@ export class WeatherApi {
 
       await this.setCachedData(cacheKey, JSON.stringify(result), 10800);
       return result;
-    } catch (error) {
-      console.error('Get weather forecast error:', error);
+    } catch (error: any) {
+      console.error('Get weather forecast error:', error?.message || error);
       return null;
     }
   }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageSquare, MapPin, Settings, Plane } from "lucide-react";
+import { MessageSquare, MapPin, Settings, Plane, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -11,6 +11,12 @@ const NAV_ITEMS = [
     label: "AI 助手",
     icon: MessageSquare,
     exact: true,
+  },
+  {
+    href: "/plan/new",
+    label: "行程规划",
+    icon: LayoutDashboard,
+    exact: false,
   },
   {
     href: "/profile/preferences",

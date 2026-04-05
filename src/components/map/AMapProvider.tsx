@@ -54,8 +54,9 @@ export function AMapProvider({ config, securityJsCode, children }: AMapProviderP
     }).then((AMap: any) => {
       setIsLoaded(true);
       window.AMap = AMap;
-    }).catch((e: Error) => {
-      setError(new Error(`Failed to load AMap: ${e.message}`));
+    }).catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
+      setError(new Error(`地图加载失败: ${msg}`));
     });
 
     return () => {
@@ -165,6 +166,11 @@ export function AMapProvider({ config, securityJsCode, children }: AMapProviderP
     }
   }, []);
 
+  const registerMap = useCallback((mapInstance: any) => {
+    mapRef.current = mapInstance;
+    setMap(mapInstance);
+  }, []);
+
   const initMap = useCallback((container: HTMLElement, options?: MapOptions) => {
     if (!window.AMap) return null;
 
@@ -188,6 +194,7 @@ export function AMapProvider({ config, securityJsCode, children }: AMapProviderP
     map,
     isLoaded,
     error,
+    registerMap,
     setCenter,
     setZoom,
     setBounds,
@@ -217,7 +224,7 @@ interface MapProps {
 
 export function Map({ options, className, style, onMapReady, onClick, onZoomChange }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isLoaded, error, map } = useMapContext();
+  const { isLoaded, error, registerMap } = useMapContext();
   const initRef = useRef(false);
 
   useEffect(() => {
@@ -233,6 +240,8 @@ export function Map({ options, className, style, onMapReady, onClick, onZoomChan
         features: options?.features,
       });
 
+      registerMap(mapInstance);
+
       if (onClick) {
         mapInstance.on('click', (e: any) => {
           onClick([e.lnglat.lng, e.lnglat.lat]);
@@ -247,7 +256,7 @@ export function Map({ options, className, style, onMapReady, onClick, onZoomChan
 
       onMapReady?.(mapInstance);
     }
-  }, [isLoaded, options, onMapReady, onClick, onZoomChange]);
+  }, [isLoaded, options, onMapReady, onClick, onZoomChange, registerMap]);
 
   if (error) {
     return (

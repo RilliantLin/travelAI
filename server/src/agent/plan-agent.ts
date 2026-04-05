@@ -1,0 +1,528 @@
+import {
+  HumanMessage,
+  SystemMessage,
+  AIMessage,
+  BaseMessage,
+} from "@langchain/core/messages";
+import { getStreamingChatModel, getChatModel } from "./llm";
+import { getToolCallFormat } from "./tools";
+import { itineraryAgent } from "./itinerary-agent";
+import { formatDate, getDaysBetween, minutesToTime, timeToMinutes } from "../lib/utils/time";
+import { ChatMessage } from "./index";
+import {
+  Itinerary,
+  DayPlan,
+  Activity,
+  AccommodationPlan,
+} from "../types/itinerary";
+
+const PLAN_SYSTEM_PROMPT = `你是一个专业的旅游规划助手，名叫"小旅"。你同时具备自然语言对话能力和行程操作能力。
+
+你的核心职责：
+1. 与用户自然对话，了解旅行需求
+2. 通过工具调用来创建、修改行程
+3. 每次修改后向用户解释做了什么变更
+
+对话要求：
+- 友好、专业、简洁
+- 使用中文回答
+- 先用自然语言回复用户，再附上工具调用（如需要）
+- 不确定时主动询问细节
+
+当前日期：${new Date().toLocaleDateString("zh-CN")}
+
+${getToolCallFormat()}`;
+
+interface ToolCall {
+  name: string;
+  arguments: Record<string, any>;
+}
+
+const KNOWN_TOOLS = new Set([
+  "generate_itinerary",
+  "add_activity",
+  "remove_activity",
+  "replace_activity",
+  "modify_activity",
+  "set_transport",
+  "set_accommodation",
+  "reorder_day",
+]);
+
+function parseToolCalls(text: string): { cleanText: string; toolCalls: ToolCall[] } {
+  const toolCalls: ToolCall[] = [];
+  let cleanText = text;
+
+  // Format 1: <tool_call>...</tool_call> (properly closed)
+  const closedTagRegex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
+  let match;
+  while ((match = closedTagRegex.exec(text)) !== null) {
+    const parsed = tryParseToolCall(match[1].trim());
+    if (parsed) toolCalls.push(parsed);
+  }
+  cleanText = cleanText.replace(closedTagRegex, "").trim();
+
+  // Format 2: <tool_call>... (unclosed — LLM sometimes omits closing tag)
+  if (toolCalls.length === 0) {
+    const unclosedTagRegex = /<tool_call>\s*([\s\S]+)$/g;
+    while ((match = unclosedTagRegex.exec(cleanText)) !== null) {
+      const parsed = tryParseToolCall(match[1].trim());
+      if (parsed) toolCalls.push(parsed);
+    }
+    if (toolCalls.length > 0) {
+      cleanText = cleanText.replace(unclosedTagRegex, "").trim();
+    }
+  }
+
+  // Format 3 (fallback): tool_name\n{...JSON args...} without any tags
+  if (toolCalls.length === 0) {
+    const bareRegex = new RegExp(
+      `(?:^|\\n)(${[...KNOWN_TOOLS].join("|")})\\s*\\n\\s*(\\{[\\s\\S]*?\\})(?=\\n|$)`,
+      "g"
+    );
+    while ((match = bareRegex.exec(cleanText)) !== null) {
+      const toolName = match[1];
+      try {
+        const args = JSON.parse(match[2].trim());
+        toolCalls.push({ name: toolName, arguments: args });
+      } catch (e) {
+        console.error("Failed to parse bare tool call:", toolName, e);
+      }
+    }
+    if (toolCalls.length > 0) {
+      cleanText = cleanText.replace(bareRegex, "").trim();
+    }
+  }
+
+  return { cleanText, toolCalls };
+}
+
+function tryParseToolCall(inner: string): ToolCall | null {
+  // Try standard JSON: {"name":"...","arguments":{...}}
+  try {
+    const parsed = JSON.parse(inner);
+    if (parsed.name && parsed.arguments) return parsed;
+  } catch {}
+
+  // Try: tool_name\n{...args...} inside <tool_call> tags
+  const lines = inner.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length >= 2 && KNOWN_TOOLS.has(lines[0])) {
+    try {
+      const args = JSON.parse(lines.slice(1).join(""));
+      return { name: lines[0], arguments: args };
+    } catch {}
+  }
+
+  return null;
+}
+
+function convertToLangChainMessages(messages: ChatMessage[]): BaseMessage[] {
+  return messages.map((msg) => {
+    if (msg.role === "user") return new HumanMessage(msg.content);
+    if (msg.role === "assistant") return new AIMessage(msg.content);
+    return new SystemMessage(msg.content);
+  });
+}
+
+export interface SSEEvent {
+  type: "text" | "action" | "itinerary_snapshot";
+  content?: string;
+  action?: string;
+  payload?: any;
+  data?: Itinerary;
+}
+
+export class PlanAgent {
+  private currentItinerary: Itinerary | null = null;
+
+  async *planStream(
+    userInput: string,
+    conversationHistory: ChatMessage[] = [],
+    itineraryContext?: string,
+    existingItinerary?: Itinerary | null
+  ): AsyncGenerator<SSEEvent, void, unknown> {
+    if (existingItinerary) {
+      this.currentItinerary = existingItinerary;
+    }
+
+    const systemPrompt = itineraryContext
+      ? `${PLAN_SYSTEM_PROMPT}\n\n--- 当前行程状态 ---\n${itineraryContext}`
+      : PLAN_SYSTEM_PROMPT;
+
+    const messages: BaseMessage[] = [
+      new SystemMessage(systemPrompt),
+      ...convertToLangChainMessages(conversationHistory),
+      new HumanMessage(userInput),
+    ];
+
+    const model = getChatModel();
+    let fullResponse = "";
+
+    try {
+      const response = await model.invoke(messages);
+      fullResponse =
+        typeof response.content === "string"
+          ? response.content
+          : JSON.stringify(response.content);
+    } catch (error) {
+      console.error("LLM invoke error:", error);
+      yield { type: "text", content: "抱歉，AI 服务暂时不可用，请稍后再试。" };
+      return;
+    }
+
+    const { cleanText, toolCalls } = parseToolCalls(fullResponse);
+
+    if (cleanText) {
+      const chunks = splitIntoChunks(cleanText, 20);
+      for (const chunk of chunks) {
+        yield { type: "text", content: chunk };
+      }
+    }
+
+    if (toolCalls.length > 0) {
+      yield {
+        type: "action",
+        action: "set_loading",
+        payload: { message: "正在处理行程变更..." },
+      };
+
+      for (const toolCall of toolCalls) {
+        try {
+          await this.executeToolCall(toolCall);
+        } catch (error) {
+          console.error(`Tool call ${toolCall.name} failed:`, error);
+        }
+      }
+
+      if (this.currentItinerary) {
+        yield {
+          type: "itinerary_snapshot",
+          data: this.currentItinerary,
+        };
+      }
+
+      yield {
+        type: "action",
+        action: "loading_done",
+      };
+    }
+  }
+
+  private async executeToolCall(toolCall: ToolCall): Promise<void> {
+    const { name, arguments: args } = toolCall;
+
+    switch (name) {
+      case "generate_itinerary":
+        await this.handleGenerateItinerary(args);
+        break;
+      case "add_activity":
+        this.handleAddActivity(args);
+        break;
+      case "remove_activity":
+        this.handleRemoveActivity(args);
+        break;
+      case "replace_activity":
+        this.handleReplaceActivity(args);
+        break;
+      case "modify_activity":
+        this.handleModifyActivity(args);
+        break;
+      case "set_transport":
+        this.handleSetTransport(args);
+        break;
+      case "set_accommodation":
+        this.handleSetAccommodation(args);
+        break;
+      case "reorder_day":
+        this.handleReorderDay(args);
+        break;
+      default:
+        console.warn("Unknown tool:", name);
+    }
+  }
+
+  private async handleGenerateItinerary(args: Record<string, any>): Promise<void> {
+    const { destination, days, startDate, travelStyle } = args;
+
+    const start =
+      startDate || formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    const endDateObj = new Date(start);
+    endDateObj.setDate(endDateObj.getDate() + (days - 1));
+    const end = formatDate(endDateObj);
+
+    try {
+      const itinerary = await itineraryAgent.generateItinerary({
+        destination,
+        startDate: start,
+        endDate: end,
+        userId: "demo-user-001",
+        title: `${destination}${days}日游`,
+        preferences: travelStyle ? { travelStyle } : undefined,
+      });
+
+      itinerary.id = `plan-${Date.now()}`;
+      this.currentItinerary = itinerary;
+    } catch (error) {
+      console.error("Generate itinerary error:", error);
+      this.currentItinerary = this.createFallbackItinerary(
+        destination,
+        days,
+        start,
+        end
+      );
+    }
+  }
+
+  private createFallbackItinerary(
+    destination: string,
+    days: number,
+    startDate: string,
+    endDate: string
+  ): Itinerary {
+    const dayPlans: DayPlan[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(startDate);
+      d.setDate(d.getDate() + i);
+      dayPlans.push({
+        dayNumber: i + 1,
+        date: formatDate(d),
+        activities: [],
+        meals: [],
+        summary: `第${i + 1}天行程`,
+      });
+    }
+
+    return {
+      id: `plan-${Date.now()}`,
+      userId: "demo-user-001",
+      title: `${destination}${days}日游`,
+      destination,
+      startDate,
+      endDate,
+      totalDays: days,
+      days: dayPlans,
+      status: "draft",
+      description: `${destination}${days}天旅行计划`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  private handleAddActivity(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const { dayIndex, name, type, duration, description, estimatedCost } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    const lastActivity = day.activities[day.activities.length - 1];
+    const startMinutes = lastActivity
+      ? timeToMinutes(lastActivity.endTime) + 30
+      : timeToMinutes("09:00");
+
+    const newActivity: Activity = {
+      id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: type || "attraction",
+      name,
+      location: { lat: 0, lng: 0, address: "" },
+      description: description || "",
+      startTime: minutesToTime(startMinutes),
+      endTime: minutesToTime(startMinutes + (duration || 120)),
+      duration: duration || 120,
+      estimatedCost: estimatedCost || 0,
+      bookingRequired: false,
+    };
+
+    day.activities.push(newActivity);
+    this.currentItinerary.updatedAt = new Date().toISOString();
+  }
+
+  private handleRemoveActivity(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const { dayIndex, activityName } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    const idx = day.activities.findIndex(
+      (a) => a.name.includes(activityName) || activityName.includes(a.name)
+    );
+    if (idx >= 0) {
+      day.activities.splice(idx, 1);
+      this.recalculateTimes(day);
+      this.currentItinerary.updatedAt = new Date().toISOString();
+    }
+  }
+
+  private handleReplaceActivity(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const {
+      dayIndex,
+      oldActivityName,
+      newName,
+      newType,
+      newDuration,
+      newDescription,
+      newEstimatedCost,
+    } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    const idx = day.activities.findIndex(
+      (a) =>
+        a.name.includes(oldActivityName) || oldActivityName.includes(a.name)
+    );
+    if (idx >= 0) {
+      const old = day.activities[idx];
+      const duration = newDuration || old.duration;
+      day.activities[idx] = {
+        ...old,
+        id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: newName,
+        type: newType || old.type,
+        duration,
+        endTime: minutesToTime(timeToMinutes(old.startTime) + duration),
+        description: newDescription || "",
+        estimatedCost: newEstimatedCost ?? old.estimatedCost,
+      };
+      this.currentItinerary.updatedAt = new Date().toISOString();
+    }
+  }
+
+  private handleModifyActivity(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const { dayIndex, activityName, changes } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    const activity = day.activities.find(
+      (a) => a.name.includes(activityName) || activityName.includes(a.name)
+    );
+    if (!activity) return;
+
+    if (changes.startTime) activity.startTime = changes.startTime;
+    if (changes.endTime) activity.endTime = changes.endTime;
+    if (changes.duration) {
+      activity.duration = changes.duration;
+      if (activity.startTime && !changes.endTime) {
+        activity.endTime = minutesToTime(
+          timeToMinutes(activity.startTime) + changes.duration
+        );
+      }
+    }
+    if (changes.estimatedCost !== undefined)
+      activity.estimatedCost = changes.estimatedCost;
+    if (changes.description) activity.description = changes.description;
+
+    this.currentItinerary.updatedAt = new Date().toISOString();
+  }
+
+  private handleSetTransport(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const { dayIndex, from, to, mode, duration, cost, details } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    const transportActivity: Activity = {
+      id: `transport-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: "transport",
+      name: `${from} → ${to}（${modeLabel(mode)}）`,
+      location: { lat: 0, lng: 0, address: from },
+      description: details || `${modeLabel(mode)}从${from}到${to}`,
+      startTime: "00:00",
+      endTime: minutesToTime(duration || 60),
+      duration: duration || 60,
+      estimatedCost: cost || 0,
+      bookingRequired: mode === "flight" || mode === "train",
+      notes: details,
+    };
+
+    day.activities.unshift(transportActivity);
+    this.recalculateTimes(day);
+    this.currentItinerary.updatedAt = new Date().toISOString();
+  }
+
+  private handleSetAccommodation(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const { dayIndex, name, type, estimatedCost, rating, address } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    day.accommodation = {
+      id: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      location: { lat: 0, lng: 0, address: address || "" },
+      type: type || "酒店",
+      checkIn: "14:00",
+      checkOut: "12:00",
+      estimatedCost: estimatedCost || 0,
+      rating,
+    };
+    this.currentItinerary.updatedAt = new Date().toISOString();
+  }
+
+  private handleReorderDay(args: Record<string, any>): void {
+    if (!this.currentItinerary) return;
+    const { dayIndex, activityNames } = args;
+
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day) return;
+
+    const reordered: Activity[] = [];
+    for (const targetName of activityNames) {
+      const found = day.activities.find(
+        (a) => a.name.includes(targetName) || targetName.includes(a.name)
+      );
+      if (found) reordered.push(found);
+    }
+
+    const remaining = day.activities.filter((a) => !reordered.includes(a));
+    day.activities = [...reordered, ...remaining];
+    this.recalculateTimes(day);
+    this.currentItinerary.updatedAt = new Date().toISOString();
+  }
+
+  private recalculateTimes(day: DayPlan): void {
+    let currentTime = timeToMinutes("08:30");
+    for (const activity of day.activities) {
+      activity.startTime = minutesToTime(currentTime);
+      activity.endTime = minutesToTime(currentTime + activity.duration);
+      currentTime += activity.duration + 30;
+    }
+  }
+}
+
+function modeLabel(mode: string): string {
+  const labels: Record<string, string> = {
+    walking: "步行",
+    bus: "公交",
+    subway: "地铁",
+    taxi: "打车",
+    train: "火车",
+    flight: "飞机",
+    driving: "自驾",
+  };
+  return labels[mode] || mode;
+}
+
+function splitIntoChunks(text: string, avgSize: number): string[] {
+  if (text.length <= avgSize) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    const size = Math.min(
+      avgSize + Math.floor(Math.random() * 10) - 5,
+      remaining.length
+    );
+    chunks.push(remaining.slice(0, size));
+    remaining = remaining.slice(size);
+  }
+  return chunks;
+}
+
+export const planAgent = new PlanAgent();

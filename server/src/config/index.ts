@@ -13,6 +13,7 @@ export const config = {
     },
     qweather: {
       apiKey: process.env.QWEATHER_API_KEY,
+      apiHost: process.env.QWEATHER_API_HOST || '',
     },
     amap: {
       apiKey: process.env.AMAP_API_KEY,

@@ -37,10 +37,11 @@ export class ItineraryAgent {
     const attractionsResult = await amapApi.searchPOI(
       '景点',
       '',
-      '110000|110100|110200|110300',
+      '110000',
       undefined,
       1,
-      50
+      50,
+      destination
     );
 
     const restaurantsResult = await amapApi.searchPOI(
@@ -49,7 +50,8 @@ export class ItineraryAgent {
       '050000',
       undefined,
       1,
-      30
+      30,
+      destination
     );
 
     const days: DayPlan[] = [];
@@ -136,7 +138,8 @@ export class ItineraryAgent {
     meals.push(breakfast);
     currentTime += 60;
 
-    const morningAttractions = this.selectAttractions(attractions, 2, currentTime, 720);
+    const usedIndices = new Set<number>();
+    const morningAttractions = this.selectAttractions(attractions, 2, currentTime, 720, usedIndices);
     for (const attraction of morningAttractions) {
       const activity = this.createActivity(attraction, dayNumber, currentTime);
       activities.push(activity);
@@ -159,7 +162,7 @@ export class ItineraryAgent {
     meals.push(lunch);
     currentTime += 90;
 
-    const afternoonAttractions = this.selectAttractions(attractions, 2, currentTime, 1080);
+    const afternoonAttractions = this.selectAttractions(attractions, 2, currentTime, 1080, usedIndices);
     for (const attraction of afternoonAttractions) {
       const activity = this.createActivity(attraction, dayNumber, currentTime);
       activities.push(activity);
@@ -198,13 +201,21 @@ export class ItineraryAgent {
     attractions: any[],
     count: number,
     startTime: number,
-    endTime: number
+    endTime: number,
+    usedIndices: Set<number> = new Set()
   ): any[] {
     const availableTime = endTime - startTime;
     const avgDuration = 120;
     const maxCount = Math.min(count, Math.floor(availableTime / avgDuration));
 
-    return attractions.slice(0, maxCount);
+    const selected: any[] = [];
+    for (let i = 0; i < attractions.length && selected.length < maxCount; i++) {
+      if (!usedIndices.has(i)) {
+        selected.push(attractions[i]);
+        usedIndices.add(i);
+      }
+    }
+    return selected;
   }
 
   private createActivity(attraction: any, dayNumber: number, startTime: number): Activity {
