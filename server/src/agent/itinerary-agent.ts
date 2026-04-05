@@ -55,6 +55,7 @@ export class ItineraryAgent {
     );
 
     const days: DayPlan[] = [];
+    const globalUsedIndices = new Set<number>();
 
     for (let day = 0; day < totalDays; day++) {
       const currentDate = new Date(startDate);
@@ -69,7 +70,8 @@ export class ItineraryAgent {
         attractionsResult?.pois || [],
         restaurantsResult?.pois || [],
         weather,
-        preferences
+        preferences,
+        globalUsedIndices
       );
 
       days.push(dayPlan);
@@ -112,7 +114,8 @@ export class ItineraryAgent {
     attractions: any[],
     restaurants: any[],
     weather: any,
-    preferences?: any
+    preferences?: any,
+    globalUsedIndices: Set<number> = new Set()
   ): Promise<DayPlan> {
     const activities: Activity[] = [];
     const meals: MealPlan[] = [];
@@ -138,10 +141,9 @@ export class ItineraryAgent {
     meals.push(breakfast);
     currentTime += 60;
 
-    const usedIndices = new Set<number>();
-    const morningAttractions = this.selectAttractions(attractions, 2, currentTime, 720, usedIndices);
+    const morningAttractions = this.selectAttractions(attractions, 2, currentTime, 720, globalUsedIndices);
     for (const attraction of morningAttractions) {
-      const activity = this.createActivity(attraction, dayNumber, currentTime);
+      const activity = this.createActivity(attraction, dayNumber, currentTime, activities.length);
       activities.push(activity);
       currentTime += activity.duration + 30;
     }
@@ -162,9 +164,9 @@ export class ItineraryAgent {
     meals.push(lunch);
     currentTime += 90;
 
-    const afternoonAttractions = this.selectAttractions(attractions, 2, currentTime, 1080, usedIndices);
+    const afternoonAttractions = this.selectAttractions(attractions, 2, currentTime, 1080, globalUsedIndices);
     for (const attraction of afternoonAttractions) {
-      const activity = this.createActivity(attraction, dayNumber, currentTime);
+      const activity = this.createActivity(attraction, dayNumber, currentTime, activities.length);
       activities.push(activity);
       currentTime += activity.duration + 30;
     }
@@ -218,11 +220,11 @@ export class ItineraryAgent {
     return selected;
   }
 
-  private createActivity(attraction: any, dayNumber: number, startTime: number): Activity {
+  private createActivity(attraction: any, dayNumber: number, startTime: number, index: number): Activity {
     const duration = 120;
 
     return {
-      id: `activity-${dayNumber}-${Date.now()}`,
+      id: `activity-${dayNumber}-${index}-${Math.random().toString(36).slice(2, 9)}`,
       type: 'attraction',
       name: attraction.name,
       location: {

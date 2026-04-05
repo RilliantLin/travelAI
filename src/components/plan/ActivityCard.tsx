@@ -50,7 +50,7 @@ export function ActivityCard({
             <h4 className="truncate text-sm font-semibold text-gray-900">
               {activity.name}
             </h4>
-            {activity.rating && activity.rating > 0 && (
+            {activity.rating != null && activity.rating > 0 && (
               <span className="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
                 <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
                 {activity.rating.toFixed(1)}
