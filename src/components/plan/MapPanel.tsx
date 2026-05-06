@@ -9,16 +9,7 @@ import { MapPin, Loader2 } from "lucide-react";
 function activityTypeToMarkerType(
   type: string
 ): MarkerData["type"] {
-  switch (type) {
-    case "attraction":
-      return "attraction";
-    case "restaurant":
-      return "restaurant";
-    case "hotel":
-      return "hotel";
-    default:
-      return "waypoint";
-  }
+  return (["attraction", "restaurant", "hotel"].includes(type) ? type : "waypoint") as MarkerData["type"];
 }
 
 export function MapPanel() {

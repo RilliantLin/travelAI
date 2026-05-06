@@ -6,17 +6,6 @@ import type {
   AccommodationPlan,
 } from "@/types/itinerary";
 
-export interface TransportInfo {
-  id: string;
-  from: string;
-  to: string;
-  mode: "walking" | "bus" | "subway" | "taxi" | "train" | "flight" | "driving";
-  duration: number;
-  distance?: number;
-  cost?: number;
-  details?: string;
-}
-
 export interface ItineraryState {
   itinerary: Itinerary | null;
   activeDay: number;

@@ -27,6 +27,146 @@ const ITINERARY_SYSTEM_PROMPT = `你是一个专业的旅游规划助手，擅�
 请以JSON格式输出完整的行程规划，包含每日的活动安排、时间、地点、费用等信息。`;
 
 export class ItineraryAgent {
+  /** 当高德关键词/城市搜索无结果时，用目的地中心生成可展示的占位 POI（含坐标，避免地图落在北京默认点）。 */
+  private buildSyntheticAttractionPois(
+    destination: string,
+    center: { lat: number; lng: number },
+    count: number
+  ): Array<Record<string, string>> {
+    const labels = [
+      "历史街区",
+      "城市公园",
+      "观景台",
+      "文化场馆",
+      "特色商圈",
+      "滨水步道",
+      "老城街巷",
+      "艺术中心",
+    ];
+    const out: Array<Record<string, string>> = [];
+    for (let i = 0; i < count; i++) {
+      const label = labels[i % labels.length];
+      const lng = center.lng + (i % 5) * 0.014 - 0.028;
+      const lat = center.lat + Math.floor(i / 5) * 0.012;
+      out.push({
+        id: `syn-att-${destination}-${i}`,
+        name: `${destination}·${label}`,
+        location: `${lng},${lat}`,
+        address: destination,
+        cost: "0",
+        rating: "4.6",
+      });
+    }
+    return out;
+  }
+
+  private buildSyntheticRestaurantPois(
+    destination: string,
+    center: { lat: number; lng: number },
+    count: number
+  ): Array<Record<string, string>> {
+    const labels = ["当地风味", "特色小吃", "商业街美食", "轻食咖啡", "人气餐厅"];
+    const out: Array<Record<string, string>> = [];
+    for (let i = 0; i < count; i++) {
+      const lng = center.lng + (i % 4) * 0.008 - 0.012;
+      const lat = center.lat - 0.006 - (i % 3) * 0.006;
+      out.push({
+        id: `syn-rest-${destination}-${i}`,
+        name: `${destination}·${labels[i % labels.length]}`,
+        location: `${lng},${lat}`,
+        address: destination,
+        cost: "80",
+        rating: "4.4",
+      });
+    }
+    return out;
+  }
+
+  /** 合并多次关键词搜索；优先坐标周边（海外/大范围目的地更稳），避免误传 types 导致结果为空。 */
+  private async loadAttractionPois(
+    destination: string,
+    geo: { lat: number; lng: number } | null
+  ): Promise<any[]> {
+    const loc = geo ? `${geo.lng},${geo.lat}` : "";
+    const radius = geo ? 50000 : undefined;
+    const merged: any[] = [];
+    const seen = new Set<string>();
+    const pushUnique = (list: any[]) => {
+      for (const p of list) {
+        const id = p?.id || `${p?.name}-${p?.location}`;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          merged.push(p);
+        }
+      }
+    };
+
+    for (const kw of ["风景名胜", "旅游景点", "公园", "博物馆"]) {
+      if (merged.length >= 30) break;
+      const res = await amapApi.searchPOI(
+        kw,
+        loc,
+        undefined,
+        radius,
+        1,
+        50,
+        geo ? undefined : destination
+      );
+      pushUnique(res?.pois || []);
+    }
+
+    if (merged.length === 0 && geo) {
+      return this.buildSyntheticAttractionPois(destination, geo, 20);
+    }
+    if (merged.length === 0) {
+      const fallback = { lat: 35.6812, lng: 139.7671 };
+      return this.buildSyntheticAttractionPois(destination, fallback, 20);
+    }
+    return merged;
+  }
+
+  private async loadRestaurantPois(
+    destination: string,
+    geo: { lat: number; lng: number } | null
+  ): Promise<any[]> {
+    const loc = geo ? `${geo.lng},${geo.lat}` : "";
+    const radius = geo ? 35000 : undefined;
+    const merged: any[] = [];
+    const seen = new Set<string>();
+    const pushUnique = (list: any[]) => {
+      for (const p of list) {
+        const id = p?.id || `${p?.name}-${p?.location}`;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          merged.push(p);
+        }
+      }
+    };
+
+    for (const kw of ["中餐厅", "美食", "特色餐厅"]) {
+      if (merged.length >= 24) break;
+      const res = await amapApi.searchPOI(
+        kw,
+        loc,
+        undefined,
+        radius,
+        1,
+        40,
+        geo ? undefined : destination
+      );
+      pushUnique(res?.pois || []);
+    }
+
+    if (merged.length === 0 && geo) {
+      return this.buildSyntheticRestaurantPois(destination, geo, 12);
+    }
+    if (merged.length === 0) {
+      const fallback = { lat: 35.6812, lng: 139.7671 };
+      return this.buildSyntheticRestaurantPois(destination, fallback, 12);
+    }
+    return merged;
+  }
+
   async generateItinerary(params: ItineraryCreateParams): Promise<Itinerary> {
     const { destination, startDate, endDate, userId, title, description, preferences } = params;
 
@@ -34,25 +174,9 @@ export class ItineraryAgent {
 
     const weatherForecast = await weatherApi.getWeatherForecast(destination, totalDays);
 
-    const attractionsResult = await amapApi.searchPOI(
-      '景点',
-      '',
-      '110000',
-      undefined,
-      1,
-      50,
-      destination
-    );
-
-    const restaurantsResult = await amapApi.searchPOI(
-      '餐厅',
-      '',
-      '050000',
-      undefined,
-      1,
-      30,
-      destination
-    );
+    const geo = await amapApi.geocode(destination);
+    const attractionPois = await this.loadAttractionPois(destination, geo);
+    const restaurantPois = await this.loadRestaurantPois(destination, geo);
 
     const days: DayPlan[] = [];
     const globalUsedIndices = new Set<number>();
@@ -67,8 +191,8 @@ export class ItineraryAgent {
         day + 1,
         currentDate,
         destination,
-        attractionsResult?.pois || [],
-        restaurantsResult?.pois || [],
+        attractionPois,
+        restaurantPois,
         weather,
         preferences,
         globalUsedIndices
@@ -148,6 +272,8 @@ export class ItineraryAgent {
       currentTime += activity.duration + 30;
     }
 
+    currentTime = Math.max(currentTime, timeToMinutes("11:30"));
+
     const lunch: MealPlan = {
       id: `meal-${dayNumber}-lunch`,
       type: 'lunch',
@@ -170,6 +296,8 @@ export class ItineraryAgent {
       activities.push(activity);
       currentTime += activity.duration + 30;
     }
+
+    currentTime = Math.max(currentTime, timeToMinutes("17:30"));
 
     const dinner: MealPlan = {
       id: `meal-${dayNumber}-dinner`,

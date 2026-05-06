@@ -49,6 +49,21 @@ const KNOWN_TOOLS = new Set([
   "reorder_day",
 ]);
 
+/** From first `{`, return a balanced JSON substring or null (supports nested objects). */
+function extractBalancedJsonObject(s: string, openBraceIndex: number): string | null {
+  if (s[openBraceIndex] !== "{") return null;
+  let depth = 0;
+  for (let j = openBraceIndex; j < s.length; j++) {
+    const c = s[j];
+    if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) return s.slice(openBraceIndex, j + 1);
+    }
+  }
+  return null;
+}
+
 function parseToolCalls(text: string): { cleanText: string; toolCalls: ToolCall[] } {
   const toolCalls: ToolCall[] = [];
   let cleanText = text;
@@ -71,6 +86,47 @@ function parseToolCalls(text: string): { cleanText: string; toolCalls: ToolCall[
     }
     if (toolCalls.length > 0) {
       cleanText = cleanText.replace(unclosedTagRegex, "").trim();
+    }
+  }
+
+  // Format 3a: tool_name + whitespace + {json} (same line or only spaces/newlines before `{` — common LLM drift)
+  if (toolCalls.length === 0) {
+    const sameLineHead = new RegExp(
+      `(?:^|\\n)\\s*(${[...KNOWN_TOOLS].join("|")})\\s*(?=\\{)`,
+      "g"
+    );
+    const sameLineMatches: {
+      start: number;
+      end: number;
+      name: string;
+      arguments: Record<string, any>;
+    }[] = [];
+    let sm: RegExpExecArray | null;
+    while ((sm = sameLineHead.exec(cleanText)) !== null) {
+      const braceAt = sm.index + sm[0].length;
+      const jsonSlice = extractBalancedJsonObject(cleanText, braceAt);
+      if (!jsonSlice) continue;
+      try {
+        sameLineMatches.push({
+          start: sm.index,
+          end: braceAt + jsonSlice.length,
+          name: sm[1],
+          arguments: JSON.parse(jsonSlice),
+        });
+      } catch (e) {
+        console.error("Failed to parse same-line tool JSON:", sm[1], e);
+      }
+    }
+    if (sameLineMatches.length > 0) {
+      for (const row of sameLineMatches) {
+        toolCalls.push({ name: row.name, arguments: row.arguments });
+      }
+      sameLineMatches.sort((a, b) => b.start - a.start);
+      let ct = cleanText;
+      for (const row of sameLineMatches) {
+        ct = ct.slice(0, row.start) + ct.slice(row.end);
+      }
+      cleanText = ct.trim();
     }
   }
 
@@ -205,6 +261,15 @@ export class PlanAgent {
         type: "action",
         action: "loading_done",
       };
+
+      // 若 LLM 没有生成自然语言文本（仅输出工具调用），补充一条兜底回复
+      if (!cleanText) {
+        const fallback = buildFallbackMessage(toolCalls);
+        const chunks = splitIntoChunks(fallback, 20);
+        for (const chunk of chunks) {
+          yield { type: "text", content: chunk };
+        }
+      }
     }
   }
 
@@ -507,6 +572,32 @@ function modeLabel(mode: string): string {
     driving: "自驾",
   };
   return labels[mode] || mode;
+}
+
+function buildFallbackMessage(toolCalls: ToolCall[]): string {
+  const first = toolCalls[0];
+  switch (first.name) {
+    case "generate_itinerary": {
+      const { destination, days } = first.arguments;
+      return `好的，已为您生成 ${destination}${days} 日游行程！请查看中间的行程面板，如需调整随时告诉我。`;
+    }
+    case "add_activity":
+      return `已为您添加景点「${first.arguments.name}」，行程已更新！`;
+    case "remove_activity":
+      return `已为您从行程中删除「${first.arguments.activityName}」。`;
+    case "replace_activity":
+      return `已将「${first.arguments.oldActivityName}」替换为「${first.arguments.newName}」。`;
+    case "modify_activity":
+      return `已为您更新「${first.arguments.activityName}」的信息。`;
+    case "set_transport":
+      return `已设置${first.arguments.from}到${first.arguments.to}的交通方案。`;
+    case "set_accommodation":
+      return `已将第 ${first.arguments.dayIndex + 1} 天的住宿设置为「${first.arguments.name}」。`;
+    case "reorder_day":
+      return `已为您调整第 ${first.arguments.dayIndex + 1} 天的行程顺序。`;
+    default:
+      return "行程已更新，请查看中间面板！";
+  }
 }
 
 function splitIntoChunks(text: string, avgSize: number): string[] {
