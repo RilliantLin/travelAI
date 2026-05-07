@@ -10,29 +10,28 @@ AI 驱动的旅游规划平台，核心特性是 **Chat 驱动的行程编辑器
 
 ## 架构概要
 
-### 两套模式并存
+### 路由结构
 
-| 模式 | 路由 | 说明 |
-|------|------|------|
-| 经典模式 | `/` 聊天 → `/itinerary/[id]` 详情 | 聊天与行程分离，聊天生成行程后跳转独立页面查看 |
-| **规划模式** | `/plan/[id]` | 三栏并排（聊天 25% + 行程卡片 40% + 地图 35%），AI 通过 tool_call 直接操控行程 |
+| 路由 | 说明 |
+|------|------|
+| `/` | 重定向至 `/plan/new` |
+| `/plan/[id]` | 三栏规划页面（聊天 25% + 行程卡片 40% + 地图 35%），AI 通过 tool_call 直接操控行程 |
+| `/profile/preferences` | 用户偏好设置 |
 
-规划模式是主力功能。经典模式保留兼容。
-
-### 核心数据流（规划模式）
+### 核心数据流
 
 ```
 用户输入 → ChatPanel
-              ↓ sendPlanStreamMessage()
-        POST /api/agent/plan/stream
-              ↓
-        PlanAgent (LLM + <tool_call> 解析)
-              ↓ 执行 tool → 更新内存行程
-        SSE 返回: text chunks + itinerary_snapshot
-              ↓
-        ChatPanel.onAction() → Zustand applySnapshot()
-              ↓ 共享 Store
-    ItineraryPanel (卡片渲染)  +  MapPanel (地图标记)
+ ↓ sendPlanStreamMessage()
+ POST /api/agent/plan/stream
+ ↓
+ PlanAgent (LLM + <tool_call> 解析)
+ ↓ 执行 tool → 更新内存行程
+ SSE 返回: text chunks + itinerary_snapshot
+ ↓
+ ChatPanel.onAction() → Zustand applySnapshot()
+ ↓ 共享 Store
+ ItineraryPanel (卡片渲染) + MapPanel (地图标记)
 ```
 
 每轮对话前端把当前行程压缩为文本摘要注入 system prompt，让 AI 知道"现在行程长什么样"。
@@ -42,13 +41,12 @@ AI 驱动的旅游规划平台，核心特性是 **Chat 驱动的行程编辑器
 ```
 src/
 ├── app/
-│   ├── page.tsx                    # 首页（经典聊天 + 规划入口）
+│   ├── page.tsx                    # 首页（重定向至 /plan/new）
 │   ├── plan/[id]/page.tsx          # 三栏规划页面（核心）
-│   ├── itinerary/[id]/page.tsx     # 经典行程详情页（5 Tab）
 │   └── profile/preferences/        # 偏好设置
 ├── stores/
 │   ├── itinerary-store.ts          # Zustand 行程 Store（三栏共享状态）
-│   └── chat-store.ts              # Zustand 聊天 Store
+│   └── chat-store.ts               # Zustand 聊天 Store
 ├── components/
 │   ├── plan/                       # 规划模式组件
 │   │   ├── ChatPanel.tsx           # 左栏聊天（构建上下文 + SSE 流处理）
@@ -58,30 +56,36 @@ src/
 │   │   ├── TransportCard.tsx       # 交通卡片（步行/公交/火车/飞机等）
 │   │   ├── AccommodationCard.tsx   # 住宿卡片
 │   │   └── DayTimeline.tsx         # 日时间线（组合上述卡片）
-│   ├── chat/                       # 经典聊天组件（ChatWindow 等）
-│   ├── itinerary/                  # 经典行程详情组件
-│   ├── map/                        # 地图组件（AMapProvider / MapView / Marker）
-│   ├── flight/                     # 航班组件
-│   ├── hotel/                      # 酒店组件
+│   ├── chat/                       # 聊天子组件（被 ChatPanel 引用）
+│   │   ├── MessageBubble.tsx       # 消息气泡
+│   │   ├── ChatInput.tsx           # 输入框
+│   │   └── QuickActions.tsx        # 快捷操作
+│   ├── map/                        # 地图组件
+│   │   ├── AMapProvider.tsx        # 高德地图上下文
+│   │   ├── MapView.tsx             # 地图视图
+│   │   └── Marker.tsx              # 地图标记
 │   └── ui/                         # 基础 UI（Button / Navbar）
 ├── lib/api/
-│   ├── chat.ts                     # 聊天 API（含 sendPlanStreamMessage）
+│   ├── chat.ts                     # 聊天 API（sendPlanStreamMessage）
 │   ├── itinerary.ts                # 行程 CRUD API
-│   └── ...                         # flight / hotel / preference
-└── types/                          # TypeScript 类型定义
+│   └── preference.ts               # 偏好设置 API
+├── types/
+│   ├── itinerary.ts                # 行程类型定义
+│   ├── map.ts                      # 地图类型定义
+│   └── preference.ts               # 偏好类型定义
+└── stores/                         # （见上）
 
 server/
 ├── src/
 │   ├── agent/
 │   │   ├── plan-agent.ts           # 统一 PlanAgent（LLM + tool_call 解析 + 行程操作）
 │   │   ├── tools.ts                # 8 个工具定义（generate/add/remove/replace/modify/transport/accommodation/reorder）
-│   │   ├── index.ts                # 经典 TravelAgent（纯聊天）
+│   │   ├── index.ts                # TravelAgent（纯聊天后备）
 │   │   ├── itinerary-agent.ts      # ItineraryAgent（行程生成，被 PlanAgent 内部调用）
 │   │   ├── llm.ts                  # 智谱 ChatZhipuAI 模型配置
-│   │   ├── intent.ts               # 意图识别（经典模式用）
 │   │   └── prompts/                # System Prompt 模板
 │   ├── routes/
-│   │   ├── agent.routes.ts         # POST /chat, /chat/stream, /intent, /plan/stream
+│   │   ├── agent.routes.ts         # POST /plan/stream 及其他 agent 路由
 │   │   └── ...                     # itinerary / weather / attractions 等 REST 路由
 │   ├── controllers/                # 控制器层
 │   ├── lib/api/                    # 外部 API 封装（高德 / 天气 / 航班 / 酒店）
