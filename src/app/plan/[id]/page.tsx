@@ -10,11 +10,10 @@ import { useParams } from "next/navigation";
 export default function PlanPage() {
   const params = useParams();
   const id = params.id as string;
-  const { setItinerary, setLoading } = useItineraryStore();
-  const { setLinkedItineraryId } = useChatStore();
-
   useEffect(() => {
     if (id && id !== "new") {
+      const { setItinerary, setLoading } = useItineraryStore.getState();
+      const { setLinkedItineraryId } = useChatStore.getState();
       setLoading(true);
       getItinerary(id)
         .then((data) => {
@@ -25,7 +24,7 @@ export default function PlanPage() {
         })
         .finally(() => setLoading(false));
     }
-  }, [id, setItinerary, setLoading, setLinkedItineraryId]);
+  }, [id]);
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">

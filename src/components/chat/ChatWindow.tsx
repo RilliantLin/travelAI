@@ -125,9 +125,12 @@ export function ChatWindow({ className }: ChatWindowProps) {
 
           try {
             const intentResult = await detectIntent(content);
-            if (intentResult.intent === "plan_itinerary") {
-              const info = extractItineraryInfo(content, fullMessage);
-              if (info) {
+            const info = extractItineraryInfo(content, fullMessage);
+
+            const shouldCreateItinerary =
+              intentResult.intent === "plan_itinerary" || Boolean(info);
+
+            if (shouldCreateItinerary && info) {
                 const dates = info.startDate && info.endDate
                   ? { startDate: info.startDate, endDate: info.endDate }
                   : generateDemoDates(info.totalDays);
@@ -144,7 +147,7 @@ export function ChatWindow({ className }: ChatWindowProps) {
                     description: fullMessage.slice(0, 200),
                   });
                   itineraryId = itinerary.id;
-                } catch {
+                } catch (error) {
                   itineraryId = undefined;
                 }
 
@@ -160,7 +163,6 @@ export function ChatWindow({ className }: ChatWindowProps) {
                   return next;
                 });
               }
-            }
           } catch {
           }
         },
