@@ -226,6 +226,8 @@ export function Map({ options, className, style, onMapReady, onClick, onZoomChan
   const containerRef = useRef<HTMLDivElement>(null);
   const { isLoaded, error, registerMap } = useMapContext();
   const initRef = useRef(false);
+  const mapInstanceRef = useRef<any>(null);
+  const isProgrammaticZoomRef = useRef(false);
 
   useEffect(() => {
     if (isLoaded && containerRef.current && !initRef.current) {
@@ -240,6 +242,7 @@ export function Map({ options, className, style, onMapReady, onClick, onZoomChan
         features: options?.features,
       });
 
+      mapInstanceRef.current = mapInstance;
       registerMap(mapInstance);
 
       if (onClick) {
@@ -250,13 +253,40 @@ export function Map({ options, className, style, onMapReady, onClick, onZoomChan
 
       if (onZoomChange) {
         mapInstance.on('zoomchange', () => {
-          onZoomChange(mapInstance.getZoom());
+          if (!isProgrammaticZoomRef.current) {
+            onZoomChange(mapInstance.getZoom());
+          }
         });
       }
 
       onMapReady?.(mapInstance);
     }
-  }, [isLoaded, options, onMapReady, onClick, onZoomChange, registerMap]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded]);
+
+  useEffect(() => {
+    if (mapInstanceRef.current && options?.zoom !== undefined) {
+      isProgrammaticZoomRef.current = true;
+      mapInstanceRef.current.setZoom(options.zoom);
+      setTimeout(() => { isProgrammaticZoomRef.current = false; }, 600);
+    }
+  }, [options?.zoom]);
+
+  useEffect(() => {
+    if (mapInstanceRef.current && options?.mapStyle) {
+      mapInstanceRef.current.setMapStyle(options.mapStyle);
+    }
+  }, [options?.mapStyle]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const ro = new ResizeObserver(() => {
+      mapInstanceRef.current?.resize?.();
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, []);
 
   if (error) {
     return (

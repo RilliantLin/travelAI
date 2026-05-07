@@ -45,7 +45,7 @@ export function MapView({
       config={{ apiKey: AMAP_API_KEY }}
       securityJsCode={AMAP_SECURITY_CODE}
     >
-      <div className={`relative overflow-hidden border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50 rounded-none' : 'rounded-xl'}`} style={{ height: isFullscreen ? '100%' : height }}>
+      <div className={`overflow-hidden border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50 rounded-none bg-white' : 'relative rounded-xl'}`} style={{ height: isFullscreen ? '100vh' : height }}>
         <Map
           options={{
             zoom: currentZoom,
@@ -62,7 +62,7 @@ export function MapView({
         )}
 
         {showControls && (
-          <div className="absolute top-3 right-3 flex flex-col gap-2">
+          <div className="absolute top-3 right-3 flex flex-col gap-2 z-[9999]">
             <Button
               variant="outline"
               size="icon-sm"
