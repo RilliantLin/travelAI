@@ -66,10 +66,10 @@ export default function ItineraryPage({ params }: ItineraryPageProps) {
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
         <p className="text-lg text-gray-600">未找到行程信息</p>
         <Link
-          href="/"
+          href="/plan/new"
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
         >
-          返回首页
+          返回行程规划
         </Link>
       </div>
     );
@@ -106,7 +106,7 @@ export default function ItineraryPage({ params }: ItineraryPageProps) {
       <header className="border-b border-gray-200 bg-white sticky top-14 z-30">
         <div className="mx-auto max-w-6xl flex items-center gap-4 px-4 py-3">
           <Link
-            href="/"
+            href="/plan/new"
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-900 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
