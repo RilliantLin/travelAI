@@ -4,6 +4,7 @@ import {
   AIMessage,
   BaseMessage,
 } from "@langchain/core/messages";
+import { PrismaClient } from "@prisma/client";
 import { getStreamingChatModel, getChatModel } from "./llm";
 import { getToolCallFormat } from "./tools";
 import { itineraryAgent } from "./itinerary-agent";
@@ -15,6 +16,8 @@ import {
   Activity,
   AccommodationPlan,
 } from "../types/itinerary";
+
+const prisma = new PrismaClient();
 
 const PLAN_SYSTEM_PROMPT = `你是一个专业的旅游规划助手，名叫"小旅"。你同时具备自然语言对话能力和行程操作能力。
 
@@ -191,11 +194,131 @@ export interface SSEEvent {
 export class PlanAgent {
   private currentItinerary: Itinerary | null = null;
 
+  /** Upsert 行程到数据库，返回真实的数据库 ID */
+  private async persistItinerary(userId: string): Promise<string> {
+    const it = this.currentItinerary!;
+    const isTemp = it.id.startsWith("plan-");
+
+    // 确保 demo 用户存在
+    await prisma.user.upsert({
+      where: { id: userId },
+      create: {
+        id: userId,
+        email: `${userId}@demo.local`,
+        name: "演示用户",
+      },
+      update: {},
+    });
+
+    const totalBudget = it.budget?.total ?? null;
+
+    // 核心 upsert：创建或更新行程顶层记录
+    let itineraryDbId: string;
+    if (isTemp) {
+      const created = await prisma.itinerary.create({
+        data: {
+          userId,
+          title: it.title,
+          destination: it.destination,
+          startDate: new Date(it.startDate),
+          endDate: new Date(it.endDate),
+          description: it.description ?? null,
+          totalBudget,
+          status: it.status ?? "draft",
+        },
+      });
+      itineraryDbId = created.id;
+    } else {
+      await prisma.itinerary.update({
+        where: { id: it.id },
+        data: {
+          title: it.title,
+          destination: it.destination,
+          startDate: new Date(it.startDate),
+          endDate: new Date(it.endDate),
+          description: it.description ?? null,
+          totalBudget,
+          status: it.status ?? "draft",
+          updatedAt: new Date(),
+        },
+      });
+      itineraryDbId = it.id;
+      // 清空旧天计划，稍后重建
+      await prisma.itineraryDay.deleteMany({ where: { itineraryId: itineraryDbId } });
+    }
+
+    // 重建每天的计划
+    for (const day of it.days) {
+      const savedDay = await prisma.itineraryDay.create({
+        data: {
+          itineraryId: itineraryDbId,
+          dayNumber: day.dayNumber,
+          date: new Date(day.date),
+          summary: day.summary ?? null,
+        },
+      });
+
+      for (const act of day.activities) {
+        await prisma.activity.create({
+          data: {
+            itineraryDayId: savedDay.id,
+            name: act.name,
+            description: act.description ?? null,
+            location: act.location?.address ?? null,
+            latitude: act.location?.lat ?? null,
+            longitude: act.location?.lng ?? null,
+            startTime: act.startTime ?? null,
+            endTime: act.endTime ?? null,
+            estimatedCost: act.estimatedCost ?? null,
+            category: act.type ?? null,
+            rating: act.rating ?? null,
+            imageUrl: act.imageUrl ?? null,
+          },
+        });
+      }
+
+      for (const meal of day.meals ?? []) {
+        await prisma.meal.create({
+          data: {
+            itineraryDayId: savedDay.id,
+            name: meal.name,
+            type: meal.type,
+            location: meal.location?.address ?? null,
+            latitude: meal.location?.lat ?? null,
+            longitude: meal.location?.lng ?? null,
+            estimatedCost: meal.estimatedCost ?? null,
+          },
+        });
+      }
+
+      if (day.accommodation) {
+        const acc = day.accommodation;
+        await prisma.accommodation.create({
+          data: {
+            itineraryDayId: savedDay.id,
+            name: acc.name,
+            type: acc.type ?? null,
+            location: acc.location?.address ?? null,
+            latitude: acc.location?.lat ?? null,
+            longitude: acc.location?.lng ?? null,
+            checkIn: acc.checkIn ?? null,
+            checkOut: acc.checkOut ?? null,
+            estimatedCost: acc.estimatedCost ?? null,
+            rating: acc.rating ?? null,
+          },
+        });
+      }
+    }
+
+    return itineraryDbId;
+  }
+
   async *planStream(
     userInput: string,
     conversationHistory: ChatMessage[] = [],
     itineraryContext?: string,
-    existingItinerary?: Itinerary | null
+    existingItinerary?: Itinerary | null,
+    userId: string = "demo-user-001"
   ): AsyncGenerator<SSEEvent, void, unknown> {
     if (existingItinerary) {
       this.currentItinerary = existingItinerary;
@@ -251,6 +374,14 @@ export class PlanAgent {
       }
 
       if (this.currentItinerary) {
+        try {
+          const dbId = await this.persistItinerary(userId);
+          this.currentItinerary.id = dbId;
+          this.currentItinerary.updatedAt = new Date().toISOString();
+        } catch (err) {
+          console.error("Failed to persist itinerary to DB:", err);
+        }
+
         yield {
           type: "itinerary_snapshot",
           data: this.currentItinerary,

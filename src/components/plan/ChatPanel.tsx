@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { QuickActions } from "@/components/chat/QuickActions";
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 
 export function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   const {
     messages,
@@ -26,6 +28,7 @@ export function ChatPanel() {
     clearChat,
     linkedItineraryId,
     initialized,
+    userId,
   } = useChatStore();
 
   const { itinerary, setItinerary, setLoading, applySnapshot } =
@@ -80,8 +83,11 @@ export function ChatPanel() {
         (action) => {
           if (action.type === "itinerary_snapshot" && action.data) {
             applySnapshot(action.data);
-            if (action.data.id) {
-              setLinkedItineraryId(action.data.id);
+            const newId = action.data.id as string | undefined;
+            if (newId && newId !== linkedItineraryId) {
+              setLinkedItineraryId(newId);
+              // 拿到真实 DB ID 后更新浏览器 URL（不刷新页面）
+              router.replace(`/plan/${newId}`);
             }
           }
           if (action.type === "action" && action.action === "set_loading") {
@@ -94,7 +100,8 @@ export function ChatPanel() {
         () => {
           setStreaming(false);
           setLoading(false);
-        }
+        },
+        userId
       );
     },
     [
@@ -107,6 +114,8 @@ export function ChatPanel() {
       applySnapshot,
       setLinkedItineraryId,
       setLoading,
+      userId,
+      router,
     ]
   );
 

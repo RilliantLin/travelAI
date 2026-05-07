@@ -3,6 +3,7 @@ import "./globals.css";
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { Navbar } from "@/components/ui/navbar";
+import { HistoryDrawer } from "@/components/ui/HistoryDrawer";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -20,6 +21,7 @@ export default function RootLayout({
     <html lang="zh-CN" className={cn("font-sans", inter.variable)}>
       <body className="antialiased">
         <Navbar />
+        <HistoryDrawer />
         {children}
       </body>
     </html>

@@ -70,7 +70,7 @@ router.post("/chat/stream", async (req: Request, res: Response) => {
 
 router.post("/plan/stream", async (req: Request, res: Response) => {
   try {
-    const { message, history = [], itineraryContext, itineraryId } = req.body;
+    const { message, history = [], itineraryContext, itineraryId, userId = "demo-user-001" } = req.body;
 
     if (!message) {
       return res.status(400).json({ error: "Message is required" });
@@ -85,7 +85,8 @@ router.post("/plan/stream", async (req: Request, res: Response) => {
       message,
       history as ChatMessage[],
       itineraryContext,
-      null
+      null,
+      userId
     );
 
     for await (const event of stream) {

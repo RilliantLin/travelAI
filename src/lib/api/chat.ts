@@ -21,7 +21,8 @@ export async function sendPlanStreamMessage(
   onChunk: (chunk: string) => void = () => {},
   onDone: (fullMessage: string) => void = () => {},
   onAction: (action: SSEAction) => void = () => {},
-  onError: (error: Error) => void = () => {}
+  onError: (error: Error) => void = () => {},
+  userId?: string
 ): Promise<void> {
   try {
     const response = await fetch(`${API_BASE_URL}/agent/plan/stream`, {
@@ -32,6 +33,7 @@ export async function sendPlanStreamMessage(
         history,
         itineraryContext,
         itineraryId,
+        userId,
       }),
     });
 
