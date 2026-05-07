@@ -32,6 +32,11 @@ const PLAN_SYSTEM_PROMPT = `你是一个专业的旅游规划助手，名叫"小
 - 先用自然语言回复用户，再附上工具调用（如需要）
 - 不确定时主动询问细节
 
+【重要】关于 generate_itinerary 工具：
+- 调用该工具时，文字回复只需简短确认（例如"好的，我来为您规划X日游行程，请稍候……"）
+- 绝对不要在文字中预先描述具体景点、酒店或餐厅名称——因为实际景点将由工具从真实数据库搜索生成，与你预想的可能完全不同
+- 工具执行完毕后行程面板会自动展示详细内容，无需在聊天中重复列举
+
 当前日期：${new Date().toLocaleDateString("zh-CN")}
 
 ${getToolCallFormat()}`;
@@ -393,13 +398,11 @@ export class PlanAgent {
         action: "loading_done",
       };
 
-      // 若 LLM 没有生成自然语言文本（仅输出工具调用），补充一条兜底回复
-      if (!cleanText) {
-        const fallback = buildFallbackMessage(toolCalls);
-        const chunks = splitIntoChunks(fallback, 20);
-        for (const chunk of chunks) {
-          yield { type: "text", content: chunk };
-        }
+      // 行程操作完成后，始终追加一条确认消息（覆盖"仅工具调用"和"有前置文本"两种情况）
+      const completionMsg = buildCompletionMessage(toolCalls, this.currentItinerary);
+      const chunks = splitIntoChunks(completionMsg, 20);
+      for (const chunk of chunks) {
+        yield { type: "text", content: chunk };
       }
     }
   }
@@ -703,6 +706,34 @@ function modeLabel(mode: string): string {
     driving: "自驾",
   };
   return labels[mode] || mode;
+}
+
+function buildCompletionMessage(toolCalls: ToolCall[], itinerary: Itinerary | null): string {
+  const first = toolCalls[0];
+  switch (first.name) {
+    case "generate_itinerary": {
+      if (!itinerary) return `好的，行程已生成！请查看中间的行程面板，如需调整随时告诉我。`;
+      const dayCount = itinerary.days.length;
+      const spots = itinerary.days[0]?.activities.map((a) => a.name).slice(0, 2).join("、") || "";
+      return `🎉 ${itinerary.title}已生成完毕！共 ${dayCount} 天行程，第1天包含${spots}等景点。如需调整任何安排，随时告诉我！`;
+    }
+    case "add_activity":
+      return `✅ 已为您添加「${first.arguments.name}」，行程已更新！`;
+    case "remove_activity":
+      return `✅ 已从行程中删除「${first.arguments.activityName}」。`;
+    case "replace_activity":
+      return `✅ 已将「${first.arguments.oldActivityName}」替换为「${first.arguments.newName}」。`;
+    case "modify_activity":
+      return `✅ 已更新「${first.arguments.activityName}」的信息。`;
+    case "set_transport":
+      return `✅ 已设置${first.arguments.from}到${first.arguments.to}的交通方案。`;
+    case "set_accommodation":
+      return `✅ 已将第 ${first.arguments.dayIndex + 1} 天的住宿设置为「${first.arguments.name}」。`;
+    case "reorder_day":
+      return `✅ 已调整第 ${first.arguments.dayIndex + 1} 天的行程顺序。`;
+    default:
+      return `✅ 行程已更新，请查看中间面板！`;
+  }
 }
 
 function buildFallbackMessage(toolCalls: ToolCall[]): string {

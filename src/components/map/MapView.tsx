@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { AMapProvider } from '@/components/map/AMapProvider';
+import React, { useState, useEffect, useRef } from 'react';
+import { AMapProvider, useMapContext } from '@/components/map/AMapProvider';
 import { Map } from '@/components/map/AMapProvider';
 import { MarkerList } from '@/components/map/Marker';
 import { MarkerData, RouteData } from '@/types/map';
@@ -20,6 +20,35 @@ interface MapViewProps {
 
 const AMAP_API_KEY = process.env.NEXT_PUBLIC_AMAP_KEY || '';
 const AMAP_SECURITY_CODE = process.env.NEXT_PUBLIC_AMAP_SECURITY_CODE || '';
+
+/** 在 AMapProvider 内部响应式地同步地图中心和视野 */
+function MapController({ center, markers }: { center: [number, number]; markers: MarkerData[] }) {
+  const { map, setCenter } = useMapContext();
+  const prevMarkersKey = useRef<string>('');
+
+  useEffect(() => {
+    if (!map || !center) return;
+    if (center[0] === 0 && center[1] === 0) return;
+    setCenter(center);
+  }, [center, map, setCenter]);
+
+  useEffect(() => {
+    if (!map || markers.length === 0) return;
+    const key = markers.map((m) => m.id).join(',');
+    if (key === prevMarkersKey.current) return;
+    prevMarkersKey.current = key;
+    // 稍作延迟确保 Marker 组件已将标记添加到地图上
+    setTimeout(() => {
+      try {
+        map.setFitView(null, false, [60, 60, 60, 60]);
+      } catch {
+        // setFitView 失败时静默降级（标记尚未就绪）
+      }
+    }, 300);
+  }, [markers, map]);
+
+  return null;
+}
 
 export function MapView({
   markers = [],
@@ -45,6 +74,7 @@ export function MapView({
       config={{ apiKey: AMAP_API_KEY }}
       securityJsCode={AMAP_SECURITY_CODE}
     >
+      <MapController center={center} markers={markers} />
       <div className={`overflow-hidden border border-gray-200 ${isFullscreen ? 'fixed inset-0 z-50 rounded-none bg-white' : 'relative rounded-xl'}`} style={{ height: isFullscreen ? '100vh' : height }}>
         <Map
           options={{

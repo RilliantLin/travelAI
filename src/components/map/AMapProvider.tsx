@@ -273,6 +273,14 @@ export function Map({ options, className, style, onMapReady, onClick, onZoomChan
   }, [options?.zoom]);
 
   useEffect(() => {
+    const center = options?.center;
+    if (mapInstanceRef.current && center && (center[0] !== 0 || center[1] !== 0)) {
+      mapInstanceRef.current.setCenter(center);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options?.center?.[0], options?.center?.[1]]);
+
+  useEffect(() => {
     if (mapInstanceRef.current && options?.mapStyle) {
       mapInstanceRef.current.setMapStyle(options.mapStyle);
     }
