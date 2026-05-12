@@ -10,9 +10,28 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const allowedOrigins = new Set([
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://travel-ai-navy.vercel.app",
+  ...(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+]);
 
 app.use(helmet());
-app.use(cors());
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS origin denied: ${origin}`));
+    },
+  })
+);
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

@@ -97,7 +97,10 @@ export function ChatPanel() {
             setLoading(false);
           }
         },
-        () => {
+        (error) => {
+          finalizeAssistantMessage(
+            `抱歉，这次请求没有成功：${error.message || "请稍后再试"}`
+          );
           setStreaming(false);
           setLoading(false);
         },
