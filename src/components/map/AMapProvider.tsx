@@ -59,9 +59,10 @@ export function AMapProvider({ config, securityJsCode, children }: AMapProviderP
       setError(new Error(`地图加载失败: ${msg}`));
     });
 
+    const markers = markersRef.current;
+    const polylines = polylinesRef.current;
+
     return () => {
-      const markers = markersRef.current;
-      const polylines = polylinesRef.current;
       mapRef.current?.destroy();
       markers.clear();
       polylines.clear();

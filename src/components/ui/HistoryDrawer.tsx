@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { X, Plus, MapPin, Calendar, Clock, Loader2, Route } from "lucide-react";
 import { useUIStore } from "@/stores/ui-store";
@@ -95,9 +96,12 @@ function ItineraryItem({
       {/* 封面缩略图 */}
       <div className="relative h-[60px] w-[80px] shrink-0 overflow-hidden rounded-lg">
         {itinerary.coverImage ? (
-          <img
+          <Image
             src={itinerary.coverImage}
             alt={itinerary.title}
+            fill
+            sizes="80px"
+            unoptimized
             className="h-full w-full object-cover"
           />
         ) : (
