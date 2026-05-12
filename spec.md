@@ -45,7 +45,8 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Frontend (Next.js 14)                       │
+│        Frontend (Next.js 14 / Vercel)                           │
+│        https://travel-ai-navy.vercel.app                        │
 │                                                                 │
 │  ┌─────────────┐  ┌──────────────────┐  ┌───────────────────┐  │
 │  │  ChatPanel   │  │ ItineraryPanel   │  │    MapPanel        │  │
@@ -61,7 +62,8 @@
 └────────────────────────────┼────────────────────────────────────┘
                              │ SSE / REST
               ┌──────────────┴──────────────┐
-              │     Express.js API (:3001)   │
+              │ Express.js API (Railway)     │
+              │ travelai-backend-production  │
               │         /api/agent           │
               │         /api/itineraries     │
               │         /api/weather ...     │
@@ -74,7 +76,8 @@
               └──────┬───┘  └─────────────┘
                      │
               ┌──────┴───────┐
-              │  PostgreSQL   │
+              │ Supabase      │
+              │ PostgreSQL    │
               │  + Redis      │
               └──────────────┘
 ```
@@ -84,7 +87,7 @@
 ```
 1. 用户在 ChatPanel 输入消息
 2. 前端构建 itineraryContext（当前行程压缩摘要）
-3. POST /api/agent/plan/stream { message, history, itineraryContext }
+3. POST /api/agent/plan/stream { message, history, itineraryContext, itineraryId, userId }
 4. PlanAgent 将 itineraryContext 注入 system prompt
 5. LLM 生成自然语言回复 + <tool_call> 标签
 6. 后端解析 tool_call → 执行行程操作（增删改排序）
@@ -95,6 +98,14 @@
 9. ItineraryPanel 和 MapPanel 响应式重渲染
 ```
 
+### 2.4 生产环境部署
+
+| 模块 | 平台 | 生产地址 / 项目地址 | 说明 |
+|------|------|---------------------|------|
+| 前端 | Vercel | https://travel-ai-navy.vercel.app | Next.js 14 应用，生产环境通过 `NEXT_PUBLIC_API_URL` 调用 Railway 后端 |
+| 后端 | Railway | https://travelai-backend-production-a9fc.up.railway.app | Express API 服务，统一前缀 `/api`，健康检查 `/health` |
+| 数据库 | Supabase | https://supabase.com/dashboard/project/dangrltzzfeelbjceroc | 托管 PostgreSQL，后端通过 `DATABASE_URL` 连接 |
+
 ---
 
 ## 3. 页面与路由
@@ -102,23 +113,22 @@
 ### 3.1 路由总览
 
 ```
-/                        → 首页（经典聊天 + 规划入口卡片）
+/                        → 重定向至 /plan/new
 /plan/new                → 三栏规划页（新行程，核心页面）
 /plan/:id                → 三栏规划页（加载已有行程）
 /profile/preferences     → 用户偏好设置
-/itinerary/:id           → 经典行程详情页（5 Tab，兼容保留）
-/itinerary/:id/map       → 地图全览子页面
 ```
 
 ### 3.2 导航栏
 
-组件：`src/components/ui/navbar.tsx`，全局 sticky 顶部。
+组件：`src/components/ui/navbar.tsx`，全局 sticky 顶部。根布局 `src/app/layout.tsx` 同时挂载 `HistoryDrawer`，因此历史线路入口在所有页面可用。
 
 | 路径 | 名称 | 图标 |
 |------|------|------|
-| `/` | AI 助手 | MessageSquare |
 | `/plan/new` | 行程规划 | LayoutDashboard |
 | `/profile/preferences` | 偏好设置 | Settings |
+
+左侧「历史线路」按钮使用 `ui-store.isHistoryDrawerOpen` 控制抽屉显隐，点击历史条目跳转 `/plan/:id`。
 
 ### 3.3 规划页面（核心）
 
@@ -155,8 +165,7 @@
 
 路由：`/`，文件：`src/app/page.tsx`
 
-- 顶部：规划模式入口卡片（带特性说明 + "开始规划行程"按钮，跳转 `/plan/new`）
-- 下方：经典 ChatWindow（保留原有的简单聊天 + 行程生成 + 跳转详情页流程）
+当前首页不承载独立内容，访问后直接 `redirect("/plan/new")`，让三栏规划页成为默认首屏。
 
 ### 3.5 偏好设置页
 
@@ -164,11 +173,15 @@
 
 表单字段：预算范围、出行人数、旅行风格（休闲/适中/紧凑）、交通偏好、住宿偏好、饮食限制、偏好活动、无障碍需求。支持表单校验和重置。
 
-### 3.6 经典行程详情页（兼容）
+### 3.6 历史线路抽屉
 
-路由：`/itinerary/[id]`
+组件：`src/components/ui/HistoryDrawer.tsx`
 
-5 个 Tab：日程安排（ScheduleTimeline）、地图视图（MapView）、费用预算（BudgetCard）、航班信息（FlightSearchPanel）、酒店推荐（HotelSearchPanel）。
+- 全局挂载在 `src/app/layout.tsx`
+- 打开时调用 `GET /api/itineraries` 拉取最近 50 条行程
+- 按更新时间分组：近期、一个月内、更早
+- 支持创建新行程，跳转 `/plan/new`
+- 点击历史行程后跳转 `/plan/:id` 并关闭抽屉
 
 ---
 
@@ -250,7 +263,7 @@
 
 | Agent | 文件 | 用途 | 使用场景 |
 |-------|------|------|----------|
-| TravelAgent | `server/src/agent/index.ts` | 纯对话（chatStream + 意图识别） | 经典模式 `/` 页面 |
+| TravelAgent | `server/src/agent/index.ts` | 纯对话（chatStream + 意图识别） | 后备聊天接口 / 兼容接口 |
 | **PlanAgent** | `server/src/agent/plan-agent.ts` | 对话 + 行程操作（tool_call） | 规划模式 `/plan/[id]` 页面 |
 | ItineraryAgent | `server/src/agent/itinerary-agent.ts` | 行程数据生成（POI + 天气 + 预算） | 被 PlanAgent 内部调用 |
 
@@ -334,6 +347,7 @@ LLM 通过 prompt 约定输出格式（非原生 function calling）：
   history: ChatMessage[];   // 对话历史
   itineraryContext?: string; // 行程摘要文本
   itineraryId?: string;     // 已有行程 ID
+  userId?: string;          // 用户 ID，默认 demo-user-001
 }
 ```
 
@@ -348,7 +362,7 @@ LLM 通过 prompt 约定输出格式（非原生 function calling）：
 
 流结束标记：`data: [DONE]`
 
-### 6.3 经典模式端点（保留）
+### 6.3 后备聊天端点（保留）
 
 | 端点 | 说明 |
 |------|------|
@@ -611,22 +625,18 @@ travel/
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx                        # 根布局（Navbar + 全局样式）
-│   │   ├── page.tsx                          # 首页（规划入口 + 经典聊天）
+│   │   ├── page.tsx                          # 首页重定向至 /plan/new
 │   │   ├── globals.css                       # Tailwind 全局样式
 │   │   ├── plan/
 │   │   │   └── [id]/
 │   │   │       └── page.tsx                  # 三栏规划页面（核心）
-│   │   ├── itinerary/
-│   │   │   └── [id]/
-│   │   │       ├── page.tsx                  # 经典行程详情页（5 Tab）
-│   │   │       └── map/
-│   │   │           └── page.tsx              # 地图全览子页面
 │   │   └── profile/
 │   │       └── preferences/
 │   │           └── page.tsx                  # 偏好设置表单
 │   ├── stores/
 │   │   ├── itinerary-store.ts                # Zustand 行程 Store
-│   │   └── chat-store.ts                     # Zustand 聊天 Store
+│   │   ├── chat-store.ts                     # Zustand 聊天 Store
+│   │   └── ui-store.ts                       # 全局 UI Store（历史抽屉等）
 │   ├── components/
 │   │   ├── plan/                             # 规划模式组件
 │   │   │   ├── ChatPanel.tsx                 # 左栏：聊天 + 上下文构建 + SSE 流处理
@@ -637,50 +647,28 @@ travel/
 │   │   │   ├── AccommodationCard.tsx         # 住宿卡片
 │   │   │   ├── DayTimeline.tsx               # 日时间线（组合上述卡片 + 餐饮）
 │   │   │   └── index.ts
-│   │   ├── chat/                             # 经典聊天组件
-│   │   │   ├── ChatWindow.tsx                # 主窗口（SSE + localStorage + 意图→创建行程）
+│   │   ├── chat/                             # 聊天子组件
 │   │   │   ├── MessageBubble.tsx             # 消息气泡
 │   │   │   ├── ChatInput.tsx                 # 自适应输入框
 │   │   │   ├── QuickActions.tsx              # 8 个快捷操作按钮
-│   │   │   ├── ItineraryPreviewCard.tsx      # 行程预览卡片（跳转详情）
-│   │   │   └── index.ts
-│   │   ├── itinerary/                        # 经典行程详情组件
-│   │   │   ├── ItineraryOverview.tsx         # 概览头部
-│   │   │   ├── ScheduleTimeline.tsx          # 日程时间线
-│   │   │   ├── BudgetCard.tsx                # 预算卡片
-│   │   │   ├── TabNav.tsx                    # Tab 导航
 │   │   │   └── index.ts
 │   │   ├── map/                              # 地图组件
-│   │   │   ├── AMapProvider.tsx              # 高德地图 Context Provider + Map 组件
+│   │   │   ├── AMapProvider.tsx              # 高德地图 Context Provider
 │   │   │   ├── MapView.tsx                   # 地图视图容器（标记 + 控件 + 图例）
-│   │   │   ├── Marker.tsx                    # 标记点组件（颜色按类型）
-│   │   │   ├── RouteDisplay.tsx              # 路线展示
-│   │   │   └── index.ts
-│   │   ├── flight/                           # 航班组件
-│   │   │   ├── FlightCard.tsx
-│   │   │   ├── FlightPriceComparison.tsx
-│   │   │   ├── FlightSearchPanel.tsx
-│   │   │   └── index.ts
-│   │   ├── hotel/                            # 酒店组件
-│   │   │   ├── HotelCard.tsx
-│   │   │   ├── HotelSearchPanel.tsx
-│   │   │   └── index.ts
+│   │   │   └── Marker.tsx                    # 标记点组件（颜色按类型）
 │   │   └── ui/                               # 基础 UI
 │   │       ├── button.tsx                    # Button（@base-ui + CVA）
-│   │       └── navbar.tsx                    # 全局导航栏
+│   │       ├── navbar.tsx                    # 全局导航栏
+│   │       └── HistoryDrawer.tsx             # 历史线路抽屉
 │   ├── lib/
 │   │   ├── api/
-│   │   │   ├── chat.ts                       # sendMessage / sendStreamMessage / sendPlanStreamMessage / detectIntent
+│   │   │   ├── chat.ts                       # sendPlanStreamMessage
 │   │   │   ├── itinerary.ts                  # getItinerary / createItinerary / updateItinerary / deleteItinerary
-│   │   │   ├── flight.ts                     # 航班查询
-│   │   │   ├── hotel.ts                      # 酒店查询
 │   │   │   └── preference.ts                 # 偏好 CRUD
 │   │   └── utils.ts                          # cn() 类名合并
 │   └── types/
 │       ├── itinerary.ts                      # Itinerary / DayPlan / Activity / MealPlan / AccommodationPlan
 │       ├── map.ts                            # MarkerData / RouteData / MapContextValue
-│       ├── flight.ts
-│       ├── hotel.ts
 │       ├── preference.ts
 │       └── css.d.ts
 ├── server/
@@ -728,7 +716,7 @@ travel/
 │   └── prisma/
 │       ├── schema.prisma                     # 数据库模型
 │       └── migrations/
-├── CLAUDE.md                                 # AI 编码助手上下文文件
+├── AGENTS.md                                 # AI 编码助手上下文文件
 ├── spec.md                                   # 本文件
 ├── package.json
 ├── tsconfig.json
@@ -742,6 +730,27 @@ travel/
 ---
 
 ## 12. 环境变量
+
+### 生产环境
+
+| 变量 | 建议值 / 来源 | 部署位置 | 说明 |
+|------|---------------|----------|------|
+| `NEXT_PUBLIC_API_URL` | `https://travelai-backend-production-a9fc.up.railway.app/api` | Vercel | 前端调用后端 API 的基础地址 |
+| `NEXT_PUBLIC_AMAP_KEY` | 高德地图 Web JS API Key | Vercel | 前端地图渲染 |
+| `NEXT_PUBLIC_AMAP_SECURITY_CODE` | 高德地图安全密钥 | Vercel | 高德 JS API 安全配置 |
+| `PORT` | Railway 自动注入 | Railway | 后端监听端口，代码默认回退到 3001 |
+| `ZHIPU_API_KEY` | 智谱 API Key | Railway | PlanAgent / TravelAgent 调用智谱模型 |
+| `DATABASE_URL` | Supabase PostgreSQL 连接串 | Railway | Prisma 连接 Supabase 数据库 |
+| `REDIS_URL` | Redis 连接串，可选 | Railway | API 缓存；未配置时默认 `redis://localhost:6379` |
+| `AMAP_API_KEY` | 高德地图 Web 服务 API Key | Railway | 后端地理编码、POI、路线等服务 |
+| `QWEATHER_API_KEY` | 和风天气 API Key，可选 | Railway | 天气查询 |
+| `QWEATHER_API_HOST` | 和风天气 API Host，可选 | Railway | 天气接口域名配置 |
+
+生产资源：
+
+- 前端 Vercel：https://travel-ai-navy.vercel.app
+- 后端 Railway：https://travelai-backend-production-a9fc.up.railway.app
+- Supabase 项目：https://supabase.com/dashboard/project/dangrltzzfeelbjceroc
 
 ### 前端 `.env.local`
 
@@ -759,6 +768,8 @@ ZHIPU_API_KEY=你的智谱 API Key
 DATABASE_URL=postgresql://user:password@localhost:5432/travelmind
 REDIS_URL=redis://localhost:6379
 AMAP_API_KEY=你的高德地图 Web 服务 API Key
+QWEATHER_API_KEY=你的和风天气 API Key
+QWEATHER_API_HOST=你的和风天气 API Host
 ```
 
 ---
@@ -778,6 +789,14 @@ npx prisma generate
 # 启动开发服务器
 npm run dev              # 前端 :3000
 cd server && npm run dev # 后端 :3001
+
+# 使用生产环境变量本地调试
+npm run dev:prd
+cd server && npm run dev:prd
+
+# 生产构建
+npm run build
+cd server && npm run build
 
 # 类型检查
 npx tsc --noEmit                     # 前端
