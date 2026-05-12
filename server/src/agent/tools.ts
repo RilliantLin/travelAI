@@ -128,8 +128,6 @@ export const toolSchemas = {
   },
 };
 
-export type ToolName = keyof typeof toolSchemas;
-
 export function getToolDefinitionsForPrompt(): string {
   const definitions = Object.values(toolSchemas).map((tool) => {
     const params = tool.parameters;
