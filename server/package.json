@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "dev:prd": "DOTENV_CONFIG_PATH=.env.prd nodemon --exec \"node -r dotenv/config -r ts-node/register src/index.ts\"",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
+    "build:prd": "DOTENV_CONFIG_PATH=.env.prd prisma generate && tsc",
     "start": "node dist/index.js",
     "start:prd": "DOTENV_CONFIG_PATH=.env.prd NODE_ENV=production node -r dotenv/config dist/index.js",
     "prisma:generate": "prisma generate",
