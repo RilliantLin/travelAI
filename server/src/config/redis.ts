@@ -1,19 +1,26 @@
 import Redis from "ioredis";
 
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const redisUrl =
+  process.env.REDIS_URL || (process.env.NODE_ENV === "development" ? "redis://localhost:6379" : undefined);
 
-const redis = new Redis(redisUrl, {
-  maxRetriesPerRequest: 3,
-  lazyConnect: true,
-});
+const redis = redisUrl
+  ? new Redis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+    })
+  : null;
 
-redis.on("connect", () => {
-  console.log("Redis connected successfully");
-});
+if (redis) {
+  redis.on("connect", () => {
+    console.log("Redis connected successfully");
+  });
 
-redis.on("error", (error) => {
-  console.error("Redis connection error:", error);
-});
+  redis.on("error", (error) => {
+    console.error("Redis connection error:", error);
+  });
+} else {
+  console.warn("REDIS_URL is not set. Cache is disabled for this process.");
+}
 
 export default redis;
 
@@ -39,6 +46,7 @@ export const CACHE_TTL = {
 
 export async function getCached<T>(key: string): Promise<T | null> {
   try {
+    if (!redis) return null;
     const cached = await redis.get(key);
     if (cached) {
       return JSON.parse(cached) as T;
@@ -52,6 +60,7 @@ export async function getCached<T>(key: string): Promise<T | null> {
 
 export async function setCache(key: string, data: unknown, ttl: number): Promise<void> {
   try {
+    if (!redis) return;
     await redis.setex(key, ttl, JSON.stringify(data));
   } catch (error) {
     console.error("Cache set error:", error);
@@ -60,6 +69,7 @@ export async function setCache(key: string, data: unknown, ttl: number): Promise
 
 export async function deleteCache(key: string): Promise<void> {
   try {
+    if (!redis) return;
     await redis.del(key);
   } catch (error) {
     console.error("Cache delete error:", error);
@@ -68,6 +78,7 @@ export async function deleteCache(key: string): Promise<void> {
 
 export async function deleteCachePattern(pattern: string): Promise<void> {
   try {
+    if (!redis) return;
     const keys = await redis.keys(pattern);
     if (keys.length > 0) {
       await redis.del(...keys);
