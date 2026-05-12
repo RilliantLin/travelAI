@@ -4,8 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:prd": "dotenvx run -f .env.prd -- next dev",
     "build": "next build",
+    "build:prd": "dotenvx run -f .env.prd -- next build",
     "start": "next start",
+    "start:prd": "dotenvx run -f .env.prd -- next start",
     "lint": "next lint",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
