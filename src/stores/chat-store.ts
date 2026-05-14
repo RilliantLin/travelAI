@@ -1,26 +1,17 @@
 import { create } from "zustand";
 import type { ChatMessage } from "@/lib/api/chat";
+import {
+  getItineraryChatMessages,
+  saveItineraryChatMessages,
+} from "@/lib/api/itinerary-chat";
 
-const STORAGE_KEY = "travel-chat-history";
 const DEMO_USER_ID = "demo-user-001";
 
-function loadHistory(): ChatMessage[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveHistory(messages: ChatMessage[]) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
-  } catch {
-    /* ignore */
-  }
+function persistHistory(itineraryId: string | null, messages: ChatMessage[]) {
+  if (!itineraryId) return;
+  saveItineraryChatMessages(itineraryId, messages.slice(-50)).catch((error) => {
+    console.error("保存聊天记录失败:", error);
+  });
 }
 
 export interface ChatState {
@@ -31,7 +22,7 @@ export interface ChatState {
   userId: string;
   initialized: boolean;
 
-  initialize: () => void;
+  initialize: (itineraryId?: string | null) => Promise<void>;
   addUserMessage: (content: string) => ChatMessage[];
   setStreamingContent: (content: string) => void;
   appendStreamingContent: (chunk: string) => void;
@@ -49,16 +40,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   userId: DEMO_USER_ID,
   initialized: false,
 
-  initialize: () => {
-    if (get().initialized) return;
-    const saved = loadHistory();
-    set({ messages: saved, initialized: true });
+  initialize: async (itineraryId = null) => {
+    const current = get();
+    if (current.initialized && current.linkedItineraryId === itineraryId) return;
+
+    set({
+      messages: [],
+      linkedItineraryId: itineraryId,
+      initialized: true,
+      isStreaming: false,
+      streamingContent: "",
+    });
+
+    if (!itineraryId) return;
+
+    try {
+      const saved = await getItineraryChatMessages(itineraryId);
+      if (get().linkedItineraryId === itineraryId) {
+        set({ messages: saved });
+      }
+    } catch (error) {
+      console.error("读取聊天记录失败:", error);
+    }
   },
 
   addUserMessage: (content) => {
     const userMessage: ChatMessage = { role: "user", content };
     const updated = [...get().messages, userMessage];
     set({ messages: updated });
+    persistHistory(get().linkedItineraryId, updated);
     return updated;
   },
 
@@ -77,16 +87,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: false,
       streamingContent: "",
     });
-    saveHistory(finalMessages);
+    persistHistory(get().linkedItineraryId, finalMessages);
   },
 
   setStreaming: (streaming) =>
     set({ isStreaming: streaming, ...(streaming ? { streamingContent: "" } : {}) }),
 
-  setLinkedItineraryId: (id) => set({ linkedItineraryId: id }),
+  setLinkedItineraryId: (id) => {
+    const { linkedItineraryId, messages } = get();
+    set({ linkedItineraryId: id });
+
+    if (id && id !== linkedItineraryId && messages.length > 0) {
+      persistHistory(id, messages);
+    }
+  },
 
   clearChat: () => {
+    persistHistory(get().linkedItineraryId, []);
     set({ messages: [], streamingContent: "", linkedItineraryId: null });
-    localStorage.removeItem(STORAGE_KEY);
   },
 }));

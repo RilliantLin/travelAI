@@ -52,6 +52,20 @@ model Itinerary {
   days        ItineraryDay[]
   flights     Flight[]
   hotels      Hotel[]
+  chatMessages ItineraryChatMessage[]
+}
+
+model ItineraryChatMessage {
+  id          String    @id @default(cuid())
+  itineraryId String
+  itinerary   Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  role        String
+  content     String
+  sequence    Int
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([itineraryId, sequence])
 }
 
 model ItineraryDay {

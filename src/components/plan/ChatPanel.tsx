@@ -19,7 +19,6 @@ export function ChatPanel() {
     messages,
     isStreaming,
     streamingContent,
-    initialize,
     addUserMessage,
     setStreaming,
     appendStreamingContent,
@@ -27,16 +26,11 @@ export function ChatPanel() {
     setLinkedItineraryId,
     clearChat,
     linkedItineraryId,
-    initialized,
     userId,
   } = useChatStore();
 
   const { itinerary, setItinerary, setLoading, applySnapshot } =
     useItineraryStore();
-
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

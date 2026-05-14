@@ -11,19 +11,35 @@ export default function PlanPage() {
   const params = useParams();
   const id = params.id as string;
   useEffect(() => {
-    if (id && id !== "new") {
-      const { setItinerary, setLoading } = useItineraryStore.getState();
-      const { setLinkedItineraryId } = useChatStore.getState();
-      setLoading(true);
-      getItinerary(id)
-        .then((data) => {
-          if (data) {
-            setItinerary(data);
-            setLinkedItineraryId(data.id);
-          }
-        })
-        .finally(() => setLoading(false));
+    let cancelled = false;
+    const { setItinerary, setLoading } = useItineraryStore.getState();
+    const { initialize, setLinkedItineraryId } = useChatStore.getState();
+
+    if (!id || id === "new") {
+      setLoading(false);
+      setItinerary(null);
+      initialize(null);
+      return;
     }
+
+    initialize(id);
+    setLoading(true);
+    getItinerary(id)
+      .then((data) => {
+        if (!cancelled && data) {
+          setItinerary(data);
+          setLinkedItineraryId(data.id);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   return (
