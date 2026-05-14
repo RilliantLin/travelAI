@@ -46,6 +46,13 @@ interface ToolCall {
   arguments: Record<string, any>;
 }
 
+interface DirectSwapResult {
+  firstDayIndex: number;
+  secondDayIndex: number;
+  firstActivityName: string;
+  secondActivityName: string;
+}
+
 const KNOWN_TOOLS = new Set([
   "generate_itinerary",
   "add_activity",
@@ -327,6 +334,82 @@ export class PlanAgent {
   ): AsyncGenerator<SSEEvent, void, unknown> {
     if (existingItinerary) {
       this.currentItinerary = existingItinerary;
+    }
+
+    const directCrossDaySwap = this.applyDirectCrossDaySwap(userInput);
+    if (directCrossDaySwap) {
+      yield {
+        type: "action",
+        action: "set_loading",
+        payload: { message: "正在调整跨天行程..." },
+      };
+
+      if (this.currentItinerary) {
+        try {
+          const dbId = await this.persistItinerary(userId);
+          this.currentItinerary.id = dbId;
+          this.currentItinerary.updatedAt = new Date().toISOString();
+        } catch (err) {
+          console.error("Failed to persist direct cross-day swap to DB:", err);
+        }
+
+        yield {
+          type: "itinerary_snapshot",
+          data: this.currentItinerary,
+        };
+      }
+
+      yield {
+        type: "action",
+        action: "loading_done",
+      };
+
+      const message = `✅ 已将第 ${directCrossDaySwap.firstDayIndex + 1} 天的「${directCrossDaySwap.firstActivityName}」和第 ${directCrossDaySwap.secondDayIndex + 1} 天的「${directCrossDaySwap.secondActivityName}」互换。`;
+      const chunks = splitIntoChunks(message, 20);
+      for (const chunk of chunks) {
+        yield { type: "text", content: chunk };
+      }
+      return;
+    }
+
+    const directReorder = this.getDirectReorderToolCall(userInput);
+    if (directReorder) {
+      yield {
+        type: "action",
+        action: "set_loading",
+        payload: { message: "正在调整行程顺序..." },
+      };
+
+      await this.executeToolCall(directReorder);
+      if (this.currentItinerary) {
+        try {
+          const dbId = await this.persistItinerary(userId);
+          this.currentItinerary.id = dbId;
+          this.currentItinerary.updatedAt = new Date().toISOString();
+        } catch (err) {
+          console.error("Failed to persist direct reorder to DB:", err);
+        }
+
+        yield {
+          type: "itinerary_snapshot",
+          data: this.currentItinerary,
+        };
+      }
+
+      yield {
+        type: "action",
+        action: "loading_done",
+      };
+
+      const completionMsg = buildCompletionMessage(
+        [directReorder],
+        this.currentItinerary
+      );
+      const chunks = splitIntoChunks(completionMsg, 20);
+      for (const chunk of chunks) {
+        yield { type: "text", content: chunk };
+      }
+      return;
     }
 
     const systemPrompt = itineraryContext
@@ -685,6 +768,82 @@ export class PlanAgent {
     this.currentItinerary.updatedAt = new Date().toISOString();
   }
 
+  private getDirectReorderToolCall(userInput: string): ToolCall | null {
+    if (!this.currentItinerary) return null;
+    if (!/(互换|交换|调换|换一下|换下|调整.*顺序|重排|重新排序)/.test(userInput)) {
+      return null;
+    }
+
+    const dayMatch = userInput.match(/第\s*([一二三四五六七八九十\d]+)\s*天/);
+    const dayIndex = dayMatch ? parseChineseOrdinal(dayMatch[1]) - 1 : 0;
+    const day = this.currentItinerary.days[dayIndex];
+    if (!day || day.activities.length < 2) return null;
+
+    const ordinalMatches = [
+      ...userInput.matchAll(/第\s*([一二三四五六七八九十\d]+)\s*个/g),
+    ];
+    if (ordinalMatches.length < 2) return null;
+
+    const firstIndex = parseChineseOrdinal(ordinalMatches[0][1]) - 1;
+    const secondIndex = parseChineseOrdinal(ordinalMatches[1][1]) - 1;
+    if (
+      firstIndex < 0 ||
+      secondIndex < 0 ||
+      firstIndex >= day.activities.length ||
+      secondIndex >= day.activities.length ||
+      firstIndex === secondIndex
+    ) {
+      return null;
+    }
+
+    const activityNames = day.activities.map((activity) => activity.name);
+    [activityNames[firstIndex], activityNames[secondIndex]] = [
+      activityNames[secondIndex],
+      activityNames[firstIndex],
+    ];
+
+    return {
+      name: "reorder_day",
+      arguments: { dayIndex, activityNames },
+    };
+  }
+
+  private applyDirectCrossDaySwap(userInput: string): DirectSwapResult | null {
+    if (!this.currentItinerary) return null;
+    if (!/(互换|交换|调换|换一下|换下)/.test(userInput)) return null;
+
+    const targets = extractDayActivityTargets(userInput);
+    if (targets.length < 2) return null;
+
+    const [firstTarget, secondTarget] = targets;
+    if (firstTarget.dayIndex === secondTarget.dayIndex) return null;
+
+    const firstDay = this.currentItinerary.days[firstTarget.dayIndex];
+    const secondDay = this.currentItinerary.days[secondTarget.dayIndex];
+    if (!firstDay || !secondDay) return null;
+
+    const firstActivityIndex = findActivityIndex(firstDay, firstTarget);
+    const secondActivityIndex = findActivityIndex(secondDay, secondTarget);
+    if (firstActivityIndex < 0 || secondActivityIndex < 0) return null;
+
+    const firstActivity = firstDay.activities[firstActivityIndex];
+    const secondActivity = secondDay.activities[secondActivityIndex];
+
+    firstDay.activities[firstActivityIndex] = secondActivity;
+    secondDay.activities[secondActivityIndex] = firstActivity;
+
+    this.recalculateTimes(firstDay);
+    this.recalculateTimes(secondDay);
+    this.currentItinerary.updatedAt = new Date().toISOString();
+
+    return {
+      firstDayIndex: firstTarget.dayIndex,
+      secondDayIndex: secondTarget.dayIndex,
+      firstActivityName: firstActivity.name,
+      secondActivityName: secondActivity.name,
+    };
+  }
+
   private recalculateTimes(day: DayPlan): void {
     let currentTime = timeToMinutes("08:30");
     for (const activity of day.activities) {
@@ -693,6 +852,80 @@ export class PlanAgent {
       currentTime += activity.duration + 30;
     }
   }
+}
+
+interface DayActivityTarget {
+  dayIndex: number;
+  activityIndex?: number;
+  activityName?: string;
+}
+
+function extractDayActivityTargets(userInput: string): DayActivityTarget[] {
+  const targets: DayActivityTarget[] = [];
+  const targetRegex =
+    /第\s*([一二三四五六七八九十\d]+)\s*天(?:的|中|里)?\s*(?:第\s*([一二三四五六七八九十\d]+)\s*个|(.+?))(?:行程|景点|活动)?(?=\s*(?:和|跟|与|互换|交换|调换|换一下|换下|，|。|,|\.|$))/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = targetRegex.exec(userInput)) !== null) {
+    const dayNumber = parseChineseOrdinal(match[1]);
+    const activityNumber = match[2] ? parseChineseOrdinal(match[2]) : Number.NaN;
+    const activityName = match[3]?.trim();
+
+    if (!Number.isFinite(dayNumber)) continue;
+    targets.push({
+      dayIndex: dayNumber - 1,
+      activityIndex: Number.isFinite(activityNumber)
+        ? activityNumber - 1
+        : undefined,
+      activityName,
+    });
+  }
+
+  return targets;
+}
+
+function findActivityIndex(day: DayPlan, target: DayActivityTarget): number {
+  if (target.activityIndex !== undefined) {
+    return target.activityIndex >= 0 && target.activityIndex < day.activities.length
+      ? target.activityIndex
+      : -1;
+  }
+
+  if (!target.activityName) return -1;
+  return day.activities.findIndex(
+    (activity) =>
+      activity.name.includes(target.activityName!) ||
+      target.activityName!.includes(activity.name)
+  );
+}
+
+function parseChineseOrdinal(value: string): number {
+  const normalized = value.trim();
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric)) return numeric;
+
+  const digits: Record<string, number> = {
+    一: 1,
+    二: 2,
+    三: 3,
+    四: 4,
+    五: 5,
+    六: 6,
+    七: 7,
+    八: 8,
+    九: 9,
+  };
+
+  if (normalized === "十") return 10;
+  if (normalized.startsWith("十")) {
+    return 10 + (digits[normalized.slice(1)] || 0);
+  }
+  if (normalized.includes("十")) {
+    const [tens, ones] = normalized.split("十");
+    return (digits[tens] || 1) * 10 + (digits[ones] || 0);
+  }
+
+  return digits[normalized] || Number.NaN;
 }
 
 function modeLabel(mode: string): string {

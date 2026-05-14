@@ -1,8 +1,11 @@
 import { Router, Request, Response } from "express";
+import { PrismaClient } from "@prisma/client";
 import { travelAgent, ChatMessage } from "../agent";
-import { planAgent } from "../agent/plan-agent";
+import { PlanAgent } from "../agent/plan-agent";
+import { transformItinerary } from "../lib/itinerary-transform";
 
 const router = Router();
+const prisma = new PrismaClient();
 
 router.get("/", (req: Request, res: Response) => {
   res.json({
@@ -81,11 +84,34 @@ router.post("/plan/stream", async (req: Request, res: Response) => {
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
 
+    let existingItinerary = null;
+    if (typeof itineraryId === "string" && itineraryId && itineraryId !== "new") {
+      const rawItinerary = await prisma.itinerary.findUnique({
+        where: { id: itineraryId },
+        include: {
+          days: {
+            include: {
+              activities: true,
+              meals: true,
+              accommodation: true,
+            },
+            orderBy: { dayNumber: "asc" },
+          },
+          flights: true,
+          hotels: true,
+        },
+      });
+      if (rawItinerary) {
+        existingItinerary = transformItinerary(rawItinerary);
+      }
+    }
+
+    const planAgent = new PlanAgent();
     const stream = planAgent.planStream(
       message,
       history as ChatMessage[],
       itineraryContext,
-      null,
+      existingItinerary,
       userId
     );
 
