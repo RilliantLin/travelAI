@@ -5,11 +5,13 @@ import { usePathname } from "next/navigation";
 import { Settings, Plane, LayoutDashboard, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui-store";
+import { useChatStore } from "@/stores/chat-store";
+import { useItineraryStore } from "@/stores/itinerary-store";
 
 const NAV_ITEMS = [
   {
     href: "/plan/new",
-    label: "行程规划",
+    label: "新增行程规划",
     icon: LayoutDashboard,
     exact: false,
   },
@@ -24,6 +26,16 @@ const NAV_ITEMS = [
 export function Navbar() {
   const pathname = usePathname();
   const { toggleHistoryDrawer, isHistoryDrawerOpen } = useUIStore();
+  const startNewPlan = () => {
+    const { setItinerary, setLoading, setHighlightedActivity } =
+      useItineraryStore.getState();
+    const { initialize } = useChatStore.getState();
+
+    setItinerary(null);
+    setHighlightedActivity(null);
+    setLoading(false);
+    initialize(null);
+  };
 
   return (
     <nav className="sticky top-0 z-50 border-b border-gray-200 bg-white/80 backdrop-blur-md">
@@ -43,12 +55,14 @@ export function Navbar() {
             历史线路
           </button>
 
-          <Link href="/" className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
               <Plane className="h-4 w-4" />
             </div>
-            <span className="text-base font-bold text-gray-900">旅游规划 AI</span>
-          </Link>
+            <span className="text-base font-bold text-gray-900">
+              TravelMind 智能旅游规划助手
+            </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -62,6 +76,7 @@ export function Navbar() {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={item.href === "/plan/new" ? startNewPlan : undefined}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                   isActive
