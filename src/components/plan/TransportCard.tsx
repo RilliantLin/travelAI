@@ -15,8 +15,8 @@ export interface TransportInfo {
   id: string;
   from: string;
   to: string;
-  mode: "walking" | "bus" | "subway" | "taxi" | "train" | "flight" | "driving" | "cycling";
-  duration: number;
+  mode: "walking" | "bus" | "subway" | "taxi" | "train" | "flight" | "driving" | "cycling" | "unknown";
+  duration?: number;
   distance?: number;
   cost?: number;
   details?: string;
@@ -34,6 +34,7 @@ const MODE_CONFIG: Record<
   flight: { icon: Plane, label: "飞机", color: "text-sky-600", bgColor: "bg-sky-50" },
   driving: { icon: Car, label: "自驾", color: "text-gray-600", bgColor: "bg-gray-50" },
   cycling: { icon: Bike, label: "骑行", color: "text-lime-600", bgColor: "bg-lime-50" },
+  unknown: { icon: Navigation, label: "交通", color: "text-gray-500", bgColor: "bg-gray-50" },
 };
 
 interface TransportCardProps {
@@ -73,7 +74,11 @@ export function TransportCard({ transport }: TransportCardProps) {
 
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
         <span className={cn("font-medium", config.color)}>{config.label}</span>
-        <span>{formatDuration(transport.duration)}</span>
+        {transport.duration != null ? (
+          <span>{formatDuration(transport.duration)}</span>
+        ) : (
+          <span>待确认</span>
+        )}
         {transport.distance != null && transport.distance > 0 && (
           <>
             <span className="text-gray-300">·</span>

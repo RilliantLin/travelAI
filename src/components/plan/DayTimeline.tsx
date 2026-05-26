@@ -3,7 +3,7 @@
 import { ActivityCard } from "./ActivityCard";
 import { TransportCard, type TransportInfo } from "./TransportCard";
 import { AccommodationCard } from "./AccommodationCard";
-import type { DayPlan } from "@/types/itinerary";
+import type { Activity, DayPlan } from "@/types/itinerary";
 import { Utensils } from "lucide-react";
 
 interface DayTimelineProps {
@@ -35,16 +35,51 @@ function MealEntry({ name, time, cost }: { name: string; time?: string; cost?: n
 }
 
 function estimateTransport(
-  prevActivity: { name: string },
-  nextActivity: { name: string }
+  prevActivity: Activity,
+  nextActivity: Activity
 ): TransportInfo {
+  const distance = getDistanceInMeters(prevActivity, nextActivity);
+
+  if (!distance) {
+    return {
+      id: `transport-${prevActivity.id}-${nextActivity.id}`,
+      from: prevActivity.name,
+      to: nextActivity.name,
+      mode: "unknown",
+      details: `${prevActivity.name} → ${nextActivity.name}`,
+    };
+  }
+
+  const mode = distance <= 1200 ? "walking" : distance <= 5000 ? "taxi" : "driving";
+  const speedMetersPerMinute = mode === "walking" ? 80 : mode === "taxi" ? 250 : 400;
+
   return {
-    id: `transport-${prevActivity.name}-${nextActivity.name}`,
+    id: `transport-${prevActivity.id}-${nextActivity.id}`,
     from: prevActivity.name,
     to: nextActivity.name,
-    mode: "walking",
-    duration: 15,
+    mode,
+    duration: Math.max(1, Math.round(distance / speedMetersPerMinute)),
+    distance,
   };
+}
+
+function getDistanceInMeters(prevActivity: Activity, nextActivity: Activity): number | null {
+  const from = prevActivity.location;
+  const to = nextActivity.location;
+  if (!from?.lat || !from?.lng || !to?.lat || !to?.lng) return null;
+
+  const earthRadius = 6371000;
+  const toRadians = (degree: number) => (degree * Math.PI) / 180;
+  const lat1 = toRadians(from.lat);
+  const lat2 = toRadians(to.lat);
+  const deltaLat = toRadians(to.lat - from.lat);
+  const deltaLng = toRadians(to.lng - from.lng);
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return Math.round(earthRadius * c);
 }
 
 export function DayTimeline({
@@ -55,6 +90,9 @@ export function DayTimeline({
   onReplaceActivity,
 }: DayTimelineProps) {
   const { activities, meals, accommodation } = dayPlan;
+  const scheduledActivityCount = activities.filter(
+    (activity) => activity.type !== "transport"
+  ).length;
 
   const morningMeal = meals?.find((m) => m.type === "breakfast");
   const lunchMeal = meals?.find((m) => m.type === "lunch");
@@ -78,15 +116,29 @@ export function DayTimeline({
         />
       )}
 
-      {activities.map((activity, i) => (
+      {activities.map((activity, i) => {
+        const previousActivity = activities[i - 1];
+        const scheduledIndex = activities
+          .slice(0, i)
+          .filter((item) => item.type !== "transport").length;
+        const shouldShowTransport =
+          i > 0 &&
+          activity.type !== "transport" &&
+          previousActivity?.type !== "transport";
+        const shouldShowLunch =
+          lunchMeal &&
+          activity.type !== "transport" &&
+          scheduledIndex === Math.ceil(scheduledActivityCount / 2);
+
+        return (
         <div key={activity.id}>
-          {i > 0 && (
+          {shouldShowTransport && (
             <TransportCard
-              transport={estimateTransport(activities[i - 1], activity)}
+              transport={estimateTransport(previousActivity, activity)}
             />
           )}
 
-          {lunchMeal && i === Math.ceil(activities.length / 2) && (
+          {shouldShowLunch && (
             <MealEntry
               name={lunchMeal.name}
               time={lunchMeal.time}
@@ -103,7 +155,8 @@ export function DayTimeline({
             onReplace={onReplaceActivity}
           />
         </div>
-      ))}
+        );
+      })}
 
       {dinnerMeal && (
         <MealEntry

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Calendar, MapPin, Wallet, Loader2 } from "lucide-react";
 import { useItineraryStore } from "@/stores/itinerary-store";
 import { DayTimeline } from "./DayTimeline";
+import type { DayPlan } from "@/types/itinerary";
 
 function formatDate(dateStr: string): string {
   try {
@@ -13,6 +14,22 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr;
   }
+}
+
+function getDayEstimatedCost(dayPlan?: DayPlan): number {
+  if (!dayPlan) return 0;
+
+  const activityCost = dayPlan.activities.reduce(
+    (sum, activity) => sum + (activity.estimatedCost || 0),
+    0
+  );
+  const mealCost = dayPlan.meals.reduce(
+    (sum, meal) => sum + (meal.estimatedCost || 0),
+    0
+  );
+  const accommodationCost = dayPlan.accommodation?.estimatedCost || 0;
+
+  return activityCost + mealCost + accommodationCost;
 }
 
 export function ItineraryPanel() {
@@ -43,6 +60,7 @@ export function ItineraryPanel() {
   }
 
   const dayPlan = itinerary.days[activeDay];
+  const dayEstimatedCost = getDayEstimatedCost(dayPlan);
 
   return (
     <div className="flex h-full flex-col">
@@ -52,14 +70,18 @@ export function ItineraryPanel() {
           <MapPin className="h-4 w-4 text-blue-600" />
           <h2 className="text-sm font-bold text-gray-900">{itinerary.title}</h2>
         </div>
-        <div className="flex items-center gap-3 text-xs text-gray-500">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
           <span>
             {itinerary.startDate} ~ {itinerary.endDate}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <Wallet className="h-3 w-3" />
+            当日约 ¥{dayEstimatedCost}
           </span>
           {itinerary.budget && (
             <span className="inline-flex items-center gap-1">
               <Wallet className="h-3 w-3" />
-              ¥{itinerary.budget.totalBudget || itinerary.budget.totalEstimated}
+              总预算 ¥{itinerary.budget.totalBudget || itinerary.budget.totalEstimated}
             </span>
           )}
         </div>

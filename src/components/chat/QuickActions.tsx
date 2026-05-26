@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { MapPin, UtensilsCrossed, Hotel, Plane, CloudSun, Calculator, Settings } from "lucide-react";
+import { MapPin, Settings } from "lucide-react";
 
 const QUICK_ACTIONS = [
   {
@@ -18,41 +18,41 @@ const QUICK_ACTIONS = [
     prompt: "有什么值得去的景点？",
     color: "text-red-600 bg-red-50 hover:bg-red-100 border-red-200",
   },
-  {
-    id: "search_restaurants",
-    label: "美食推荐",
-    icon: UtensilsCrossed,
-    prompt: "推荐一些当地美食",
-    color: "text-orange-600 bg-orange-50 hover:bg-orange-100 border-orange-200",
-  },
-  {
-    id: "search_hotels",
-    label: "酒店推荐",
-    icon: Hotel,
-    prompt: "推荐性价比高的酒店",
-    color: "text-purple-600 bg-purple-50 hover:bg-purple-100 border-purple-200",
-  },
-  {
-    id: "search_flights",
-    label: "查询机票",
-    icon: Plane,
-    prompt: "帮我查一下机票信息",
-    color: "text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border-cyan-200",
-  },
-  {
-    id: "check_weather",
-    label: "天气查询",
-    icon: CloudSun,
-    prompt: "未来几天天气怎么样？",
-    color: "text-yellow-600 bg-yellow-50 hover:bg-yellow-100 border-yellow-200",
-  },
-  {
-    id: "get_budget",
-    label: "预算估算",
-    icon: Calculator,
-    prompt: "帮我估算一下旅行预算",
-    color: "text-green-600 bg-green-50 hover:bg-green-100 border-green-200",
-  },
+  // {
+  //   id: "search_restaurants",
+  //   label: "美食推荐",
+  //   icon: UtensilsCrossed,
+  //   prompt: "推荐一些当地美食",
+  //   color: "text-orange-600 bg-orange-50 hover:bg-orange-100 border-orange-200",
+  // },
+  // {
+  //   id: "search_hotels",
+  //   label: "酒店推荐",
+  //   icon: Hotel,
+  //   prompt: "推荐性价比高的酒店",
+  //   color: "text-purple-600 bg-purple-50 hover:bg-purple-100 border-purple-200",
+  // },
+  // {
+  //   id: "search_flights",
+  //   label: "查询机票",
+  //   icon: Plane,
+  //   prompt: "帮我查一下机票信息",
+  //   color: "text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border-cyan-200",
+  // },
+  // {
+  //   id: "check_weather",
+  //   label: "天气查询",
+  //   icon: CloudSun,
+  //   prompt: "未来几天天气怎么样？",
+  //   color: "text-yellow-600 bg-yellow-50 hover:bg-yellow-100 border-yellow-200",
+  // },
+  // {
+  //   id: "get_budget",
+  //   label: "预算估算",
+  //   icon: Calculator,
+  //   prompt: "帮我估算一下旅行预算",
+  //   color: "text-green-600 bg-green-50 hover:bg-green-100 border-green-200",
+  // },
   {
     id: "modify_preferences",
     label: "偏好设置",
