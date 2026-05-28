@@ -2,6 +2,9 @@
   "name": "server",
   "version": "1.0.0",
   "main": "dist/index.js",
+  "bin": {
+    "travel": "./dist/cli/index.js"
+  },
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "dev:prd": "DOTENV_CONFIG_PATH=.env.prd nodemon --exec \"node -r dotenv/config -r ts-node/register src/index.ts\"",
@@ -12,6 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
+    "cli": "ts-node src/cli/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -1,10 +1,12 @@
 import { Request, Response } from 'express';
-import { itineraryAgent } from '../agent/itinerary-agent';
 import { ItineraryCreateParams } from '../types/itinerary';
-import { PrismaClient } from '@prisma/client';
-import { transformItinerary } from '../lib/itinerary-transform';
-
-const prisma = new PrismaClient();
+import {
+  createGeneratedItinerary,
+  deleteItineraryById,
+  getItineraryById,
+  listItineraries,
+  updateItineraryMeta,
+} from '../services/itinerary.service';
 
 export const createItinerary = async (req: Request, res: Response) => {
   try {
@@ -28,72 +30,11 @@ export const createItinerary = async (req: Request, res: Response) => {
       preferences,
     };
 
-    const itinerary = await itineraryAgent.generateItinerary(params);
-
-    const savedItinerary = await prisma.itinerary.create({
-      data: {
-        userId: itinerary.userId,
-        title: itinerary.title,
-        destination: itinerary.destination,
-        startDate: new Date(itinerary.startDate),
-        endDate: new Date(itinerary.endDate),
-        description: itinerary.description,
-        totalBudget: itinerary.budget?.total,
-        status: itinerary.status,
-      },
-    });
-
-    for (const dayPlan of itinerary.days) {
-      const savedDay = await prisma.itineraryDay.create({
-        data: {
-          itineraryId: savedItinerary.id,
-          dayNumber: dayPlan.dayNumber,
-          date: new Date(dayPlan.date),
-          summary: dayPlan.summary,
-        },
-      });
-
-      for (const activity of dayPlan.activities) {
-        await prisma.activity.create({
-          data: {
-            itineraryDayId: savedDay.id,
-            name: activity.name,
-            description: activity.description,
-            location: activity.location.address,
-            latitude: activity.location.lat,
-            longitude: activity.location.lng,
-            startTime: activity.startTime,
-            endTime: activity.endTime,
-            estimatedCost: activity.estimatedCost,
-            category: activity.type,
-            rating: activity.rating,
-            imageUrl: activity.imageUrl,
-          },
-        });
-      }
-
-      for (const meal of dayPlan.meals) {
-        await prisma.meal.create({
-          data: {
-            itineraryDayId: savedDay.id,
-            name: meal.name,
-            type: meal.type,
-            location: meal.location.address,
-            latitude: meal.location.lat,
-            longitude: meal.location.lng,
-            estimatedCost: meal.estimatedCost,
-          },
-        });
-      }
-    }
+    const itinerary = await createGeneratedItinerary(params);
 
     res.json({
       success: true,
-      data: {
-        ...savedItinerary,
-        days: itinerary.days,
-        budget: itinerary.budget,
-      },
+      data: itinerary,
     });
   } catch (error) {
     console.error('Create itinerary error:', error);
@@ -108,21 +49,7 @@ export const getItinerary = async (req: Request, res: Response) => {
   try {
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
-    const itinerary = await prisma.itinerary.findUnique({
-      where: { id },
-      include: {
-        days: {
-          include: {
-            activities: true,
-            meals: true,
-            accommodation: true,
-          },
-          orderBy: { dayNumber: 'asc' },
-        },
-        flights: true,
-        hotels: true,
-      },
-    });
+    const itinerary = await getItineraryById(id);
 
     if (!itinerary) {
       return res.status(404).json({
@@ -133,7 +60,7 @@ export const getItinerary = async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      data: transformItinerary(itinerary),
+      data: itinerary,
     });
   } catch (error) {
     console.error('Get itinerary error:', error);
@@ -148,26 +75,11 @@ export const getUserItineraries = async (req: Request, res: Response) => {
   try {
     const { userId } = req.query;
 
-    const where: any = {};
-    if (userId && typeof userId === 'string') {
-      where.userId = userId;
-    }
-
-    const itineraries = await prisma.itinerary.findMany({
-      where,
-      include: {
-        days: {
-          include: {
-            activities: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    const itineraries = await listItineraries(typeof userId === 'string' ? userId : undefined);
 
     res.json({
       success: true,
-      data: itineraries.map(transformItinerary),
+      data: itineraries,
     });
   } catch (error) {
     console.error('Get user itineraries error:', error);
@@ -183,15 +95,7 @@ export const updateItinerary = async (req: Request, res: Response) => {
     const id = typeof req.params.id === 'string' ? req.params.id : '';
     const { title, description, status } = req.body;
 
-    const itinerary = await prisma.itinerary.update({
-      where: { id },
-      data: {
-        title,
-        description,
-        status,
-        updatedAt: new Date(),
-      },
-    });
+    const itinerary = await updateItineraryMeta(id, { title, description, status });
 
     res.json({
       success: true,
@@ -210,9 +114,7 @@ export const deleteItinerary = async (req: Request, res: Response) => {
   try {
     const id = typeof req.params.id === 'string' ? req.params.id : '';
 
-    await prisma.itinerary.delete({
-      where: { id },
-    });
+    await deleteItineraryById(id);
 
     res.json({
       success: true,

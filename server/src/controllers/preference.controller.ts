@@ -1,7 +1,11 @@
 import { Request, Response } from "express";
-import prisma from "../config/database";
-import { getCached, setCache, deleteCache, CACHE_KEYS, CACHE_TTL } from "../config/redis";
 import { z } from "zod";
+import {
+  deletePreferenceByUserId,
+  getPreferenceByUserId,
+  getPreferenceForRecommendation as getPreferenceForRecommendationService,
+  upsertPreference,
+} from "../services/preference.service";
 
 const getParam = (param: string | string[] | undefined): string | undefined => {
   if (Array.isArray(param)) {
@@ -9,19 +13,6 @@ const getParam = (param: string | string[] | undefined): string | undefined => {
   }
   return param;
 };
-
-const preferenceSchema = z.object({
-  budgetMin: z.number().min(0).optional(),
-  budgetMax: z.number().min(0).optional(),
-  currency: z.string().default("CNY"),
-  travelerCount: z.number().int().min(1).max(20).default(1),
-  travelStyle: z.enum(["relaxed", "moderate", "intensive"]).optional(),
-  dietaryRestrictions: z.array(z.string()).default([]),
-  preferredActivities: z.array(z.string()).default([]),
-  transportPreference: z.enum(["plane", "train", "car", "bus"]).optional(),
-  accommodationType: z.enum(["hotel", "hostel", "apartment", "resort"]).optional(),
-  accessibilityNeeds: z.boolean().default(false),
-});
 
 export const getPreference = async (req: Request, res: Response) => {
   try {
@@ -34,20 +25,7 @@ export const getPreference = async (req: Request, res: Response) => {
       });
     }
 
-    const cacheKey = `${CACHE_KEYS.USER_PREFERENCES}:${userId}`;
-    const cachedPreference = await getCached(cacheKey);
-
-    if (cachedPreference) {
-      return res.json({
-        success: true,
-        message: "获取用户偏好成功 (缓存)",
-        data: cachedPreference,
-      });
-    }
-
-    const preference = await prisma.userPreference.findUnique({
-      where: { userId },
-    });
+    const preference = await getPreferenceByUserId(userId);
 
     if (!preference) {
       return res.json({
@@ -56,9 +34,6 @@ export const getPreference = async (req: Request, res: Response) => {
         data: null,
       });
     }
-
-    await setCache(cacheKey, preference, CACHE_TTL.USER_PREFERENCES);
-
     return res.json({
       success: true,
       message: "获取用户偏好成功",
@@ -84,31 +59,15 @@ export const createOrUpdatePreference = async (req: Request, res: Response) => {
         data: null,
       });
     }
-    const validatedData = preferenceSchema.parse(req.body);
+    const preference = await upsertPreference(userId, req.body);
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
+    if (!preference) {
       return res.status(404).json({
         success: false,
         message: "用户不存在",
         data: null,
       });
     }
-
-    const preference = await prisma.userPreference.upsert({
-      where: { userId },
-      update: validatedData,
-      create: {
-        userId,
-        ...validatedData,
-      },
-    });
-
-    const cacheKey = `${CACHE_KEYS.USER_PREFERENCES}:${userId}`;
-    await setCache(cacheKey, preference, CACHE_TTL.USER_PREFERENCES);
 
     return res.json({
       success: true,
@@ -144,24 +103,15 @@ export const deletePreference = async (req: Request, res: Response) => {
       });
     }
 
-    const preference = await prisma.userPreference.findUnique({
-      where: { userId },
-    });
+    const deleted = await deletePreferenceByUserId(userId);
 
-    if (!preference) {
+    if (!deleted) {
       return res.status(404).json({
         success: false,
         message: "用户偏好不存在",
         data: null,
       });
     }
-
-    await prisma.userPreference.delete({
-      where: { userId },
-    });
-
-    const cacheKey = `${CACHE_KEYS.USER_PREFERENCES}:${userId}`;
-    await deleteCache(cacheKey);
 
     return res.json({
       success: true,
@@ -179,26 +129,5 @@ export const deletePreference = async (req: Request, res: Response) => {
 };
 
 export const getPreferenceForRecommendation = async (userId: string) => {
-  const preference = await prisma.userPreference.findUnique({
-    where: { userId },
-  });
-
-  if (!preference) {
-    return null;
-  }
-
-  return {
-    budgetRange: {
-      min: preference.budgetMin ?? 0,
-      max: preference.budgetMax ?? Infinity,
-      currency: preference.currency,
-    },
-    travelerCount: preference.travelerCount,
-    travelStyle: preference.travelStyle ?? "moderate",
-    dietaryRestrictions: preference.dietaryRestrictions,
-    preferredActivities: preference.preferredActivities,
-    transportPreference: preference.transportPreference ?? "plane",
-    accommodationType: preference.accommodationType ?? "hotel",
-    accessibilityNeeds: preference.accessibilityNeeds,
-  };
+  return getPreferenceForRecommendationService(userId);
 };

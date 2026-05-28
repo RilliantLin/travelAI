@@ -12,14 +12,20 @@ const redis = redisUrl
 
 if (redis) {
   redis.on("connect", () => {
-    console.log("Redis connected successfully");
+    if (process.env.TRAVEL_CLI !== "true") {
+      console.log("Redis connected successfully");
+    }
   });
 
   redis.on("error", (error) => {
-    console.error("Redis connection error:", error);
+    if (process.env.TRAVEL_CLI !== "true") {
+      console.error("Redis connection error:", error);
+    }
   });
 } else {
-  console.warn("REDIS_URL is not set. Cache is disabled for this process.");
+  if (process.env.TRAVEL_CLI !== "true") {
+    console.warn("REDIS_URL is not set. Cache is disabled for this process.");
+  }
 }
 
 export default redis;
@@ -86,4 +92,9 @@ export async function deleteCachePattern(pattern: string): Promise<void> {
   } catch (error) {
     console.error("Cache delete pattern error:", error);
   }
+}
+
+export async function closeRedis(): Promise<void> {
+  if (!redis) return;
+  redis.disconnect();
 }
