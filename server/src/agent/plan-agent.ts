@@ -205,6 +205,7 @@ export interface SSEEvent {
 
 export class PlanAgent {
   private currentItinerary: Itinerary | null = null;
+  private currentUserInput = "";
 
   /** Upsert 行程到数据库，返回真实的数据库 ID */
   private async persistItinerary(userId: string): Promise<string> {
@@ -332,6 +333,8 @@ export class PlanAgent {
     existingItinerary?: Itinerary | null,
     userId: string = "demo-user-001"
   ): AsyncGenerator<SSEEvent, void, unknown> {
+    this.currentUserInput = userInput;
+
     if (existingItinerary) {
       this.currentItinerary = existingItinerary;
     }
@@ -525,6 +528,9 @@ export class PlanAgent {
 
   private async handleGenerateItinerary(args: Record<string, any>): Promise<void> {
     const { destination, days, startDate, travelStyle } = args;
+    const activitiesPerDay =
+      normalizeActivitiesPerDayArg(args.activitiesPerDay) ??
+      extractRequestedActivitiesPerDayFromText(this.currentUserInput);
 
     const start =
       startDate || formatDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
@@ -539,7 +545,10 @@ export class PlanAgent {
         endDate: end,
         userId: "demo-user-001",
         title: `${destination}${days}日游`,
-        preferences: travelStyle ? { travelStyle } : undefined,
+        preferences: {
+          ...(travelStyle ? { travelStyle } : {}),
+          ...(activitiesPerDay ? { activitiesPerDay } : {}),
+        },
       });
 
       itinerary.id = `plan-${Date.now()}`;
@@ -928,6 +937,29 @@ function parseChineseOrdinal(value: string): number {
   return digits[normalized] || Number.NaN;
 }
 
+function normalizeActivitiesPerDayArg(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.max(1, Math.min(8, Math.floor(value)));
+}
+
+function extractRequestedActivitiesPerDayFromText(text: string): number | undefined {
+  const patterns = [
+    /(?:安排|游览|规划|包含|只要|仅安排|就安排)?\s*([一二三四五六七八九十\d]+)\s*(?:个|处|座)?\s*(?:经典|主要|热门|小众)?\s*(?:景点|地点|活动)/,
+    /(?:景点|地点|活动)\s*(?:安排|规划|游览|包含|要)?\s*([一二三四五六七八九十\d]+)\s*(?:个|处|座)?/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const parsed = parseChineseOrdinal(match[1]);
+    if (Number.isFinite(parsed)) {
+      return Math.max(1, Math.min(8, parsed));
+    }
+  }
+
+  return undefined;
+}
+
 function modeLabel(mode: string): string {
   const labels: Record<string, string> = {
     walking: "步行",
@@ -947,8 +979,10 @@ function buildCompletionMessage(toolCalls: ToolCall[], itinerary: Itinerary | nu
     case "generate_itinerary": {
       if (!itinerary) return `好的，行程已生成！请查看中间的行程面板，如需调整随时告诉我。`;
       const dayCount = itinerary.days.length;
-      const spots = itinerary.days[0]?.activities.map((a) => a.name).slice(0, 2).join("、") || "";
-      return `🎉 ${itinerary.title}已生成完毕！共 ${dayCount} 天行程，第1天包含${spots}等景点。如需调整任何安排，随时告诉我！`;
+      const firstDayActivities = itinerary.days[0]?.activities ?? [];
+      const spots = firstDayActivities.map((a) => a.name).slice(0, 3).join("、") || "推荐";
+      const suffix = firstDayActivities.length > 3 ? "等景点" : "景点";
+      return `🎉 ${itinerary.title}已生成完毕！共 ${dayCount} 天行程，第1天包含${spots}${suffix}。如需调整任何安排，随时告诉我！`;
     }
     case "add_activity":
       return `✅ 已为您添加「${first.arguments.name}」，行程已更新！`;

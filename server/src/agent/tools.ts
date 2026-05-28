@@ -16,6 +16,13 @@ export const toolSchemas = {
         .enum(["relaxed", "moderate", "intensive"])
         .optional()
         .describe("旅行节奏"),
+      activitiesPerDay: z
+        .number()
+        .int()
+        .min(1)
+        .max(8)
+        .optional()
+        .describe("每天安排的主要景点/活动数量。用户明确说几个景点、几个活动时必须传入"),
     }),
   },
 
@@ -143,7 +150,7 @@ export function getToolCallFormat(): string {
 </tool_call>
 
 可用的工具：
-- generate_itinerary: 生成完整行程。参数: destination(目的地), days(天数), startDate(可选,出发日期YYYY-MM-DD), travelStyle(可选,"relaxed"|"moderate"|"intensive")
+- generate_itinerary: 生成完整行程。参数: destination(目的地), days(天数), startDate(可选,出发日期YYYY-MM-DD), travelStyle(可选,"relaxed"|"moderate"|"intensive"), activitiesPerDay(可选,每天主要景点/活动数量；用户明确说几个景点/活动时必须传入)
 - add_activity: 添加活动。参数: dayIndex(天数索引,从0开始), name(名称), type(可选,"attraction"|"restaurant"), duration(可选,分钟), description(可选), estimatedCost(可选)
 - remove_activity: 删除活动。参数: dayIndex(天数索引), activityName(活动名称)
 - replace_activity: 替换活动。参数: dayIndex(天数索引), oldActivityName(旧名称), newName(新名称), newType(可选), newDuration(可选), newDescription(可选), newEstimatedCost(可选)

@@ -178,6 +178,7 @@ export class ItineraryAgent {
 
     const days: DayPlan[] = [];
     const globalUsedIndices = new Set<number>();
+    const activitiesPerDay = normalizeActivitiesPerDay(preferences?.activitiesPerDay, preferences?.travelStyle);
 
     for (let day = 0; day < totalDays; day++) {
       const currentDate = new Date(startDate);
@@ -193,7 +194,8 @@ export class ItineraryAgent {
         restaurantPois,
         weather,
         preferences,
-        globalUsedIndices
+        globalUsedIndices,
+        activitiesPerDay
       );
 
       days.push(dayPlan);
@@ -237,7 +239,8 @@ export class ItineraryAgent {
     restaurants: any[],
     weather: any,
     preferences?: any,
-    globalUsedIndices: Set<number> = new Set()
+    globalUsedIndices: Set<number> = new Set(),
+    activitiesPerDay: number = normalizeActivitiesPerDay(preferences?.activitiesPerDay, preferences?.travelStyle)
   ): Promise<DayPlan> {
     const activities: Activity[] = [];
     const meals: MealPlan[] = [];
@@ -263,7 +266,10 @@ export class ItineraryAgent {
     meals.push(breakfast);
     currentTime += 60;
 
-    const morningAttractions = this.selectAttractions(attractions, 2, currentTime, 720, globalUsedIndices);
+    const morningTarget = Math.ceil(activitiesPerDay / 2);
+    const afternoonTarget = activitiesPerDay - morningTarget;
+
+    const morningAttractions = this.selectAttractions(attractions, morningTarget, currentTime, 720, globalUsedIndices);
     for (const attraction of morningAttractions) {
       const activity = this.createActivity(attraction, dayNumber, currentTime, activities.length);
       activities.push(activity);
@@ -288,7 +294,7 @@ export class ItineraryAgent {
     meals.push(lunch);
     currentTime += 90;
 
-    const afternoonAttractions = this.selectAttractions(attractions, 2, currentTime, 1080, globalUsedIndices);
+    const afternoonAttractions = this.selectAttractions(attractions, afternoonTarget, currentTime, 1080, globalUsedIndices);
     for (const attraction of afternoonAttractions) {
       const activity = this.createActivity(attraction, dayNumber, currentTime, activities.length);
       activities.push(activity);
@@ -396,3 +402,13 @@ export class ItineraryAgent {
 }
 
 export const itineraryAgent = new ItineraryAgent();
+
+function normalizeActivitiesPerDay(value?: number, travelStyle?: string): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(1, Math.min(8, Math.floor(value)));
+  }
+
+  if (travelStyle === "relaxed") return 2;
+  if (travelStyle === "intensive") return 4;
+  return 3;
+}

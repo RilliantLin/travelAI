@@ -4,6 +4,11 @@ import { config } from '../../config';
 
 const AMAP_API_URL = 'https://restapi.amap.com/v3';
 
+function debugLog(...args: unknown[]): void {
+  if (process.env.TRAVEL_CLI === "true") return;
+  console.log(...args);
+}
+
 interface AMapGeocodeResponse {
   status: string;
   geocodes: Array<{
@@ -145,7 +150,7 @@ export class AMapApi {
     const cached = await this.getCachedData(cacheKey);
 
     if (cached) {
-      console.log('[AMAP API] Returning cached result for key:', cacheKey);
+      debugLog('[AMAP API] Returning cached result for key:', cacheKey);
       return JSON.parse(cached);
     }
 
@@ -171,14 +176,14 @@ export class AMapApi {
       }
 
       const endpoint = useAroundSearch ? 'place/around' : 'place/text';
-      console.log(`[AMAP API] Searching POI via /${endpoint} with params:`, params);
+      debugLog(`[AMAP API] Searching POI via /${endpoint} with params:`, params);
 
       const response = await axios.get<AMapPOISearchResponse>(
         `${AMAP_API_URL}/${endpoint}`,
         { params }
       );
 
-      console.log('[AMAP API] Response status:', response.data.status, 'count:', response.data.count, 'pois length:', response.data.pois?.length);
+      debugLog('[AMAP API] Response status:', response.data.status, 'count:', response.data.count, 'pois length:', response.data.pois?.length);
 
       if (response.data.status !== '1') {
         console.error('[AMAP API] Search failed:', response.data);

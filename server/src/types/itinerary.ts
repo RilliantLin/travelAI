@@ -91,6 +91,7 @@ export interface ItineraryPreferences {
   budgetMin?: number;
   budgetMax?: number;
   travelStyle?: 'relaxed' | 'moderate' | 'intensive';
+  activitiesPerDay?: number;
   interests?: string[];
   dietaryRestrictions?: string[];
   preferredActivities?: string[];
