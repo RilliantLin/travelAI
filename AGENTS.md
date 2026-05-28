@@ -84,6 +84,8 @@ src/
 
 server/
 ├── src/
+│   ├── cli/
+│   │   └── index.ts                # CLI 入口（agent / 脚本调用后端能力）
 │   ├── agent/
 │   │   ├── plan-agent.ts           # 统一 PlanAgent（LLM + tool_call 解析 + 行程操作 + DB 持久化）
 │   │   ├── tools.ts                # 8 个工具定义（generate/add/remove/replace/modify/transport/accommodation/reorder）
@@ -95,6 +97,10 @@ server/
 │   │   ├── agent.routes.ts         # POST /plan/stream（透传 userId）及其他 agent 路由
 │   │   └── ...                     # itinerary / weather / attractions 等 REST 路由
 │   ├── controllers/                # 控制器层
+│   ├── services/                   # HTTP 与 CLI 共享的业务逻辑
+│   │   ├── plan.service.ts         # PlanAgent 流式/非流式调用入口
+│   │   ├── itinerary.service.ts    # 行程 CRUD 与转换
+│   │   └── preference.service.ts   # 用户偏好读写
 │   ├── lib/api/                    # 外部 API 封装（高德 / 天气 / 航班 / 酒店）
 │   ├── lib/utils/                  # 工具函数（time / budget / distance）
 │   └── types/                      # 后端类型定义
@@ -139,6 +145,105 @@ Zustand Store 是三栏的唯一数据源。ChatPanel 写入 snapshot → Itiner
 - 打开时调用 `GET /api/itineraries` 拉取所有行程，按最后修改时间分组（近期 / 一个月内 / 更早）
 - 点击条目执行 `router.push(/plan/<id>)` 并关闭抽屉
 
+### CLI Agent 入口
+
+CLI 是新增的后端访问入口，不替代原 HTTP API。当前兼容关系：
+
+```
+前端 → HTTP API → controllers/routes → services → PlanAgent/Prisma
+Agent/脚本 → CLI → services → PlanAgent/Prisma
+```
+
+核心原则：
+
+- 前端继续使用 HTTP 和 SSE，`POST /api/agent/plan/stream` 行为保持兼容。
+- CLI 主要给 Codex / agent / 本地脚本使用，输出机器可读 JSON。
+- HTTP 和 CLI 必须共用 `server/src/services/`，不要在 CLI 里绕过 service 直接复制 controller 逻辑。
+- 修改后端行为时，优先改 service，再让 HTTP controller 和 CLI 复用同一逻辑。
+
+CLI 入口：
+
+```bash
+cd server
+node -r ts-node/register src/cli/index.ts <资源> <命令> [参数] [选项]
+```
+
+不建议 agent 使用 `npm run cli -- ...` 解析结果，因为本机 npm 可能输出 warning，污染 JSON stdout。
+
+构建后可使用 package bin：
+
+```bash
+cd server
+npm run build
+travel <资源> <命令> [参数] [选项]
+```
+
+CLI 输出协议：
+
+```json
+{
+  "ok": true,
+  "data": {}
+}
+```
+
+失败时输出到 stderr，并返回非零退出码：
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "ITINERARY_NOT_FOUND",
+    "message": "行程不存在"
+  }
+}
+```
+
+流式命令使用 JSON Lines：
+
+```json
+{"type":"text","content":"正在规划..."}
+{"type":"itinerary_snapshot","data":{}}
+{"type":"done"}
+```
+
+常用 CLI 命令：
+
+```bash
+# 行程
+node -r ts-node/register src/cli/index.ts plan list
+node -r ts-node/register src/cli/index.ts plan list --userId demo-user-001
+node -r ts-node/register src/cli/index.ts plan get <itineraryId>
+node -r ts-node/register src/cli/index.ts plan update <itineraryId> --title "北京三日游" --status confirmed
+node -r ts-node/register src/cli/index.ts plan delete <itineraryId>
+
+# PlanAgent 对话：生成或修改行程
+node -r ts-node/register src/cli/index.ts plan chat new "帮我规划 3 天杭州亲子游" --userId demo-user-001
+node -r ts-node/register src/cli/index.ts plan chat <itineraryId> "把第二天改轻松一点" --userId demo-user-001
+node -r ts-node/register src/cli/index.ts plan chat <itineraryId> "把第三天和第一天互换" --stream
+
+# 偏好
+node -r ts-node/register src/cli/index.ts preference get <userId>
+node -r ts-node/register src/cli/index.ts preference set <userId> --travelStyle relaxed --budgetMin 1000 --budgetMax 6000
+node -r ts-node/register src/cli/index.ts preference set <userId> --data '{"travelStyle":"moderate","travelerCount":2,"preferredActivities":["museum","food"]}'
+node -r ts-node/register src/cli/index.ts preference delete <userId>
+```
+
+CLI 运行依赖：
+
+- `server/.env` 中必须有 `DATABASE_URL`。
+- 使用 `plan chat` 时必须有 `ZHIPU_API_KEY`。
+- 使用高德搜索/地图相关生成能力时需要高德 API Key 配置。
+- 本地数据库和 Redis 可通过根目录 `docker-compose.yml` 启动。
+
+Agent 使用规则：
+
+- 后端读写优先使用 CLI，不直接操作数据库。
+- 需要解析结果时，只读取 JSON，不依赖人类可读文本。
+- 非流式命令只看 `ok`、`data`、`error` 和 exit code。
+- 流式命令逐行解析 JSON，直到收到 `{"type":"done"}`。
+- 如果命令返回非零退出码，根据 `error.code` 判断是重试、换参数，还是向用户说明失败。
+
 ## 开发命令
 
 ```bash
@@ -148,6 +253,10 @@ npm run dev          # Next.js dev server (port 3000)
 # 后端
 cd server
 npm run dev          # Express dev server (port 3001)
+
+# CLI（agent 推荐）
+cd server
+node -r ts-node/register src/cli/index.ts plan list
 
 # 数据库
 cd server
