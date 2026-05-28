@@ -70,6 +70,70 @@ function groupItinerariesByTime(itineraries: Itinerary[]) {
   return groups;
 }
 
+const DIRECT_CITY_NAMES = ["北京", "上海", "天津", "重庆", "香港", "澳门"];
+const DESTINATION_SPLIT_RE = /[、,，/|+&和及至到-]+/;
+const NON_CITY_DETAIL_RE = /[路街道巷弄号园馆店区县镇乡村门楼层]/;
+
+function normalizeCityName(city: string) {
+  return city
+    .trim()
+    .replace(/^(中国|中华人民共和国)/, "")
+    .replace(/^(内蒙古|广西|西藏|宁夏|新疆)(自治区)?/, "")
+    .replace(/^[\u4e00-\u9fa5]{2,8}(省|自治区|特别行政区)/, "")
+    .replace(/\d+\s*(日|天|晚).*/, "")
+    .replace(/傣族自治州$/, "")
+    .replace(/(市|特别行政区|地区|盟|州)$/g, "")
+    .replace(/(旅行|旅游|自由行|亲子游|自驾游|日游|天游|游)$/g, "")
+    .trim();
+}
+
+function extractCityFromAddress(address?: string) {
+  if (!address) return null;
+
+  const text = address.trim();
+  const directCity = DIRECT_CITY_NAMES.find((city) => text.includes(city));
+  if (directCity) return directCity;
+
+  const cityMatch = text.match(/(?:^|省|自治区|特别行政区)([\u4e00-\u9fa5]{2,10}市)/);
+  if (cityMatch?.[1]) return normalizeCityName(cityMatch[1]);
+
+  if (text.length <= 6 && !NON_CITY_DETAIL_RE.test(text)) {
+    return normalizeCityName(text);
+  }
+
+  return null;
+}
+
+function extractCitiesFromDestination(destination?: string) {
+  if (!destination) return [];
+
+  return destination
+    .split(DESTINATION_SPLIT_RE)
+    .map((part) => {
+      const directCity = DIRECT_CITY_NAMES.find((city) => part.includes(city));
+      return directCity ?? normalizeCityName(part);
+    })
+    .filter((city) => city.length > 0);
+}
+
+function getCityCount(itinerary: Itinerary) {
+  const destinationCities = extractCitiesFromDestination(itinerary.destination);
+  if (destinationCities.length > 0) {
+    return new Set(destinationCities).size;
+  }
+
+  const cities = new Set<string>();
+
+  for (const day of itinerary.days) {
+    for (const activity of day.activities) {
+      const city = extractCityFromAddress(activity.location?.address);
+      if (city) cities.add(city);
+    }
+  }
+
+  return cities.size;
+}
+
 function ItineraryItem({
   itinerary,
   onClick,
@@ -81,12 +145,7 @@ function ItineraryItem({
     (sum, d) => sum + d.activities.length,
     0
   );
-  const cities = new Set(
-    itinerary.days
-      .flatMap((d) => d.activities)
-      .map((a) => a.location?.address?.split("市")[0])
-      .filter(Boolean)
-  ).size;
+  const cities = getCityCount(itinerary);
 
   return (
     <button
