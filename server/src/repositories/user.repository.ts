@@ -1,6 +1,7 @@
 import prisma from "../config/database";
 
 export interface UserCreateData {
+  id?: string;
   email: string;
   name?: string;
   avatar?: string;
@@ -28,6 +29,20 @@ export function createUserRecord(data: UserCreateData) {
   return prisma.user.create({ data });
 }
 
+export function upsertUserRecord(id: string, data: Omit<UserCreateData, "id">) {
+  return prisma.user.upsert({
+    where: { id },
+    update: {
+      name: data.name,
+      avatar: data.avatar,
+    },
+    create: {
+      id,
+      ...data,
+    },
+  });
+}
+
 export function updateUserRecord(id: string, data: UserUpdateData) {
   return prisma.user.update({
     where: { id },
@@ -40,4 +55,3 @@ export async function deleteUserRecord(id: string): Promise<void> {
     where: { id },
   });
 }
-

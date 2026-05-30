@@ -5,11 +5,9 @@ const router = Router();
 
 router.get("/", (_req: Request, res: Response) => {
   res.json({
-    message: "Agent API is deprecated",
-    deprecated: true,
-    replacement: "Use Codex Agent with travel CLI tools.",
+    message: "Codex planning bridge API",
     endpoints: {
-      "POST /plan/stream": "Deprecated compatibility SSE endpoint",
+      "POST /plan/stream": "SSE planning bridge endpoint",
     },
   });
 });
@@ -20,8 +18,6 @@ router.post("/plan/stream", async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Deprecation", "true");
-    res.setHeader("Sunset", "Sat, 30 May 2026 00:00:00 GMT");
 
     const stream = createPlanStream({
       message: req.body?.message ?? "",
@@ -39,13 +35,22 @@ router.post("/plan/stream", async (req: Request, res: Response) => {
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (error) {
-    console.error("Deprecated plan stream error:", error);
+    console.error("Plan stream error:", error);
     if (!res.headersSent) {
       res.status(500).json({
         success: false,
-        error: "Failed to process deprecated plan stream",
+        error: "Failed to process plan stream",
       });
     } else {
+      res.write(
+        `data: ${JSON.stringify({
+          type: "text",
+          content: "规划过程中遇到错误，请稍后重试。",
+        })}\n\n`
+      );
+      res.write(
+        `data: ${JSON.stringify({ type: "action", action: "loading_done" })}\n\n`
+      );
       res.write("data: [DONE]\n\n");
       res.end();
     }
@@ -53,4 +58,3 @@ router.post("/plan/stream", async (req: Request, res: Response) => {
 });
 
 export default router;
-

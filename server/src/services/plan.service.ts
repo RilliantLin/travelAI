@@ -2,6 +2,7 @@ import { PlanEvent, ChatMessage } from "../contracts/events";
 import { AppError } from "../contracts/errors";
 import { Itinerary } from "../types/itinerary";
 import { estimateItineraryBudget } from "./budget.service";
+import { runCodexPlanningBridge } from "./codex-planner.service";
 import { optimizePlanOrder } from "./route.service";
 import { validatePlanData, ValidationResult } from "./validation.service";
 
@@ -32,31 +33,33 @@ export function optimizePlan(input: unknown) {
 }
 
 export async function* createPlanStream(
-  _params: PlanStreamParams
+  params: PlanStreamParams
 ): AsyncGenerator<PlanEvent, void, unknown> {
-  yield {
-    type: "text",
-    content:
-      "后端内置 AI 规划已下线。请由外层 Codex Agent 通过 travel CLI 调用地图、预算、校验和 itinerary create/update 工具完成行程生成。",
-  };
+  for await (const event of runCodexPlanningBridge(params)) {
+    yield event;
+  }
   yield { type: "done" };
 }
 
 export async function runPlanChat(params: PlanStreamParams): Promise<PlanChatResult> {
   const events: PlanEvent[] = [];
   let text = "";
+  let itinerary: Itinerary | null = null;
 
   for await (const event of createPlanStream(params)) {
     events.push(event);
     if (event.type === "text") {
       text += event.content;
     }
+    if (event.type === "itinerary_snapshot") {
+      itinerary = event.data;
+    }
   }
 
   return {
     text,
     events,
-    itinerary: null,
+    itinerary,
   };
 }
 
@@ -68,4 +71,3 @@ export function rejectDeprecatedPlanGeneration(): never {
     410
   );
 }
-

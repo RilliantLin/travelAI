@@ -19,6 +19,11 @@ export type PlanBridgeEvent =
   | {
       type: "itinerary_snapshot";
       data?: Itinerary;
+    }
+  | {
+      type: "tool_result";
+      name: string;
+      data?: unknown;
     };
 
 export interface PlanBridgeRequest {
@@ -54,4 +59,3 @@ export async function sendPlanBridgeMessage(
     },
   });
 }
-

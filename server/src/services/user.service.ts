@@ -5,6 +5,7 @@ import {
   deleteUserRecord,
   getUserByEmail,
   getUserById,
+  upsertUserRecord,
   updateUserRecord,
 } from "../repositories/user.repository";
 
@@ -33,6 +34,11 @@ export async function createUser(input: unknown) {
   return createUserRecord(data);
 }
 
+export async function ensureUser(id: string, input: unknown) {
+  const data = createUserSchema.parse(input);
+  return upsertUserRecord(id, data);
+}
+
 export async function getUser(id: string) {
   const user = await getUserById(id);
 
@@ -51,4 +57,3 @@ export async function updateUser(id: string, input: unknown) {
 export async function deleteUser(id: string): Promise<void> {
   await deleteUserRecord(id);
 }
-
