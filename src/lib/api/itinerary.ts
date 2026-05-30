@@ -1,16 +1,43 @@
 import { Itinerary } from "@/types/itinerary";
+import { apiRequest, jsonBody } from "./client";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+export type ItineraryCreateRequest = {
+  userId: string;
+  title?: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  description?: string;
+  status?: Itinerary["status"];
+  days?: Itinerary["days"];
+  budget?: unknown;
+  totalBudget?: number;
+};
+
+export type ItineraryUpdateRequest = Partial<
+  Pick<
+    Itinerary,
+    | "userId"
+    | "title"
+    | "destination"
+    | "startDate"
+    | "endDate"
+    | "description"
+    | "status"
+    | "days"
+    | "tags"
+  >
+> & {
+  budget?: unknown;
+  totalBudget?: number | null;
+};
 
 export async function getItinerary(id: string): Promise<Itinerary | null> {
-  const response = await fetch(`${API_BASE_URL}/itineraries/${id}`);
-  const data = await response.json();
-
-  if (!response.ok || !data.success) {
+  try {
+    return await apiRequest<Itinerary>(`/itineraries/${id}`);
+  } catch {
     return null;
   }
-
-  return data.data;
 }
 
 export async function getItineraries(params?: {
@@ -19,76 +46,42 @@ export async function getItineraries(params?: {
   page?: number;
   pageSize?: number;
 }): Promise<{ itineraries: Itinerary[]; total: number }> {
-  const searchParams = new URLSearchParams();
-  if (params?.userId) searchParams.set("userId", params.userId);
-  if (params?.status) searchParams.set("status", params.status);
-  if (params?.page) searchParams.set("page", String(params.page));
-  if (params?.pageSize) searchParams.set("pageSize", String(params.pageSize));
+  try {
+    const data = await apiRequest<Itinerary[] | { itineraries?: Itinerary[]; total?: number }>(
+      "/itineraries",
+      { params }
+    );
+    const itineraries = Array.isArray(data) ? data : data.itineraries ?? [];
 
-  const response = await fetch(
-    `${API_BASE_URL}/itineraries?${searchParams.toString()}`
-  );
-  const data = await response.json();
-
-  if (!response.ok || !data.success) {
+    return {
+      itineraries,
+      total: Array.isArray(data) ? data.length : data.total ?? itineraries.length,
+    };
+  } catch {
     return { itineraries: [], total: 0 };
   }
-
-  return {
-    itineraries: data.data.itineraries || data.data || [],
-    total: data.data.total || 0,
-  };
 }
 
-export async function createItinerary(params: {
-  destination: string;
-  startDate: string;
-  endDate: string;
-  userId: string;
-  title?: string;
-  description?: string;
-}): Promise<Itinerary> {
-  const response = await fetch(`${API_BASE_URL}/itineraries`, {
+export async function createItinerary(params: ItineraryCreateRequest): Promise<Itinerary> {
+  return apiRequest<Itinerary>("/itineraries", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    body: jsonBody(params),
   });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.message || "创建行程失败");
-  }
-
-  return data.data;
 }
 
 export async function updateItinerary(
   id: string,
-  params: Partial<Pick<Itinerary, "title" | "description" | "status" | "tags">>
+  params: ItineraryUpdateRequest
 ): Promise<Itinerary> {
-  const response = await fetch(`${API_BASE_URL}/itineraries/${id}`, {
+  return apiRequest<Itinerary>(`/itineraries/${id}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
+    body: jsonBody(params),
   });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.message || "更新行程失败");
-  }
-
-  return data.data;
 }
 
 export async function deleteItinerary(id: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/itineraries/${id}`, {
+  await apiRequest(`/itineraries/${id}`, {
     method: "DELETE",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error((data as { message?: string }).message || "删除行程失败");
-  }
 }

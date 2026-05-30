@@ -7,7 +7,7 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { QuickActions } from "@/components/chat/QuickActions";
 import { useChatStore } from "@/stores/chat-store";
 import { useItineraryStore } from "@/stores/itinerary-store";
-import { sendPlanStreamMessage } from "@/lib/api/chat";
+import { sendPlanBridgeMessage } from "@/lib/api/plan-bridge";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -63,43 +63,49 @@ export function ChatPanel() {
 
       const itineraryContext = buildItineraryContext();
 
-      await sendPlanStreamMessage(
-        content,
-        currentMessages.slice(0, -1),
-        itineraryContext,
-        linkedItineraryId || undefined,
-        (chunk) => {
-          appendStreamingContent(chunk);
-        },
-        (fullMessage) => {
-          finalizeAssistantMessage(fullMessage);
-        },
-        (action) => {
-          if (action.type === "itinerary_snapshot" && action.data) {
-            applySnapshot(action.data);
-            const newId = action.data.id as string | undefined;
-            if (newId && newId !== linkedItineraryId) {
-              setLinkedItineraryId(newId);
-              // 拿到真实 DB ID 后更新浏览器 URL（不刷新页面）
-              router.replace(`/plan/${newId}`);
-            }
+      try {
+        await sendPlanBridgeMessage(
+          {
+            message: content,
+            history: currentMessages.slice(0, -1),
+            itineraryContext,
+            itineraryId: linkedItineraryId || undefined,
+            userId,
+          },
+          {
+            onChunk(chunk) {
+              appendStreamingContent(chunk);
+            },
+            onDone(fullMessage) {
+              finalizeAssistantMessage(fullMessage);
+            },
+            onAction(action) {
+              if (action.type === "itinerary_snapshot" && action.data) {
+                applySnapshot(action.data);
+                const newId = action.data.id as string | undefined;
+                if (newId && newId !== linkedItineraryId) {
+                  setLinkedItineraryId(newId);
+                  router.replace(`/plan/${newId}`);
+                }
+              }
+              if (action.type === "action" && action.action === "set_loading") {
+                setLoading(true);
+              }
+              if (action.type === "action" && action.action === "loading_done") {
+                setLoading(false);
+              }
+            },
           }
-          if (action.type === "action" && action.action === "set_loading") {
-            setLoading(true);
-          }
-          if (action.type === "action" && action.action === "loading_done") {
-            setLoading(false);
-          }
-        },
-        (error) => {
-          finalizeAssistantMessage(
-            `抱歉，这次请求没有成功：${error.message || "请稍后再试"}`
-          );
-          setStreaming(false);
-          setLoading(false);
-        },
-        userId
-      );
+        );
+      } catch (error) {
+        finalizeAssistantMessage(
+          `抱歉，这次请求没有成功：${
+            error instanceof Error ? error.message : "请稍后再试"
+          }`
+        );
+        setStreaming(false);
+        setLoading(false);
+      }
     },
     [
       addUserMessage,
@@ -135,7 +141,7 @@ export function ChatPanel() {
             <MessageSquare className="h-3.5 w-3.5" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-gray-900">AI 助手</h2>
+            <h2 className="text-sm font-semibold text-gray-900">规划工作台</h2>
           </div>
         </div>
         {messages.length > 0 && (
@@ -161,7 +167,7 @@ export function ChatPanel() {
               开始规划你的旅行
             </h3>
             <p className="max-w-[200px] text-xs text-gray-500">
-              告诉我目的地和天数，我会生成详细行程
+              由 Codex 调用后端工具生成或更新行程
             </p>
           </div>
         )}

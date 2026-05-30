@@ -53,7 +53,7 @@ export function ItineraryPanel() {
         </div>
         <h3 className="text-base font-semibold text-gray-900">行程详情</h3>
         <p className="max-w-[240px] text-sm text-gray-500">
-          在左侧对话框中描述你的旅行计划，AI 会为你生成详细行程
+          通过 Codex 工具创建行程后，这里会展示详细安排
         </p>
       </div>
     );

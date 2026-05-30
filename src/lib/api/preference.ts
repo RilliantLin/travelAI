@@ -1,6 +1,6 @@
 import { PreferenceFormData, UserPreference } from "@/types/preference";
+import { apiRequest, jsonBody } from "./client";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 const STORAGE_KEY = "travel-user-preference";
 
 const LOCAL_DEFAULTS: PreferenceFormData = {
@@ -38,11 +38,8 @@ export async function getPreference(userId: string): Promise<UserPreference | nu
   const localData = loadFromLocalStorage();
 
   try {
-    const response = await fetch(`${API_BASE_URL}/preferences/${userId}`);
-    const data = await response.json();
-
-    if (response.ok && data.success && data.data) {
-      const serverPref = data.data as UserPreference;
+    const serverPref = await apiRequest<UserPreference | null>(`/preferences/${userId}`);
+    if (serverPref) {
       const localForm: PreferenceFormData = {
         budgetMin: serverPref.budgetMin ?? undefined,
         budgetMax: serverPref.budgetMax ?? undefined,
@@ -82,23 +79,10 @@ export async function savePreference(
   saveToLocalStorage(preference);
 
   try {
-    const response = await fetch(`${API_BASE_URL}/preferences/${userId}`, {
+    return await apiRequest<UserPreference>(`/preferences/${userId}`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(preference),
+      body: jsonBody(preference),
     });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.warn("后端偏好保存失败，数据已保存到本地:", data.message);
-    }
-
-    if (response.ok && data.data) {
-      return data.data;
-    }
   } catch (error) {
     console.warn("后端偏好保存失败，数据已保存到本地:", error);
   }
@@ -126,14 +110,10 @@ export async function deletePreference(userId: string): Promise<void> {
   clearLocalPreference();
 
   try {
-    const response = await fetch(`${API_BASE_URL}/preferences/${userId}`, {
+    await apiRequest(`/preferences/${userId}`, {
       method: "DELETE",
+      unwrap: false,
     });
-
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.message || "删除偏好失败");
-    }
   } catch (error) {
     console.warn("后端偏好删除失败，已清除本地缓存:", error);
   }
