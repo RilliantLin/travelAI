@@ -1,15 +1,9 @@
 import { Request, Response } from "express";
-import prisma from "../config/database";
 import { z } from "zod";
-
-const chatMessageSchema = z.object({
-  role: z.enum(["user", "assistant", "system"]),
-  content: z.string(),
-});
-
-const saveChatMessagesSchema = z.object({
-  messages: z.array(chatMessageSchema).max(50),
-});
+import {
+  getItineraryChatMessages as getItineraryChatMessagesService,
+  saveItineraryChatMessages as saveItineraryChatMessagesService,
+} from "../services/itinerary-chat.service";
 
 const getParam = (param: string | string[] | undefined): string | undefined => {
   if (Array.isArray(param)) {
@@ -28,14 +22,7 @@ export const getItineraryChatMessages = async (req: Request, res: Response) => {
       });
     }
 
-    const messages = await prisma.itineraryChatMessage.findMany({
-      where: { itineraryId },
-      orderBy: [{ sequence: "asc" }, { createdAt: "asc" }],
-      select: {
-        role: true,
-        content: true,
-      },
-    });
+    const messages = await getItineraryChatMessagesService(itineraryId);
 
     res.json({
       success: true,
@@ -60,22 +47,7 @@ export const saveItineraryChatMessages = async (req: Request, res: Response) => 
       });
     }
 
-    const { messages } = saveChatMessagesSchema.parse(req.body);
-    const trimmedMessages = messages.slice(-50);
-
-    await prisma.$transaction([
-      prisma.itineraryChatMessage.deleteMany({ where: { itineraryId } }),
-      ...trimmedMessages.map((message, index) =>
-        prisma.itineraryChatMessage.create({
-          data: {
-            itineraryId,
-            role: message.role,
-            content: message.content,
-            sequence: index,
-          },
-        })
-      ),
-    ]);
+    const trimmedMessages = await saveItineraryChatMessagesService(itineraryId, req.body);
 
     res.json({
       success: true,

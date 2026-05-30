@@ -22,6 +22,8 @@ export type BudgetCategory =
   | 'miscellaneous';
 
 export interface BudgetSummary {
+  totalBudget?: number;
+  totalEstimated?: number;
   transportation: number;
   accommodation: number;
   food: number;

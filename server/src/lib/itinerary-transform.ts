@@ -109,6 +109,8 @@ export function transformItinerary(raw: any): Itinerary {
     days,
     budget: raw.totalBudget
       ? {
+          totalBudget: raw.totalBudget,
+          totalEstimated: raw.totalBudget,
           total: raw.totalBudget,
           transportation: 0,
           accommodation: 0,

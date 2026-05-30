@@ -33,11 +33,16 @@ npm run build
 travel <资源> <命令> [参数] [选项]
 ```
 
-CLI 会读取 `server/.env`，需要至少配置：
+CLI 会读取 `server/.env`，核心数据库命令需要至少配置：
 
 ```bash
 DATABASE_URL=...
-ZHIPU_API_KEY=...
+```
+
+地图命令需要配置：
+
+```bash
+AMAP_API_KEY=...
 ```
 
 ## 输出协议
@@ -76,72 +81,76 @@ ZHIPU_API_KEY=...
 列出行程：
 
 ```bash
-npm run cli -- plan list
-npm run cli -- plan list --userId demo-user-001
+node -r ts-node/register src/cli/index.ts itinerary list
+node -r ts-node/register src/cli/index.ts itinerary list --userId demo-user-001
 ```
 
 获取单个行程：
 
 ```bash
-npm run cli -- plan get <itineraryId>
+node -r ts-node/register src/cli/index.ts itinerary get <itineraryId>
 ```
 
-更新行程元信息：
+创建行程：
 
 ```bash
-npm run cli -- plan update <itineraryId> --title "北京三日游" --status confirmed
+node -r ts-node/register src/cli/index.ts itinerary create --data '{"userId":"demo-user-001","destination":"上海","startDate":"2026-06-01","endDate":"2026-06-01","days":[]}'
+```
+
+更新行程：
+
+```bash
+node -r ts-node/register src/cli/index.ts itinerary update <itineraryId> --data '{"title":"上海一日游","status":"confirmed"}'
 ```
 
 删除行程：
 
 ```bash
-npm run cli -- plan delete <itineraryId>
+node -r ts-node/register src/cli/index.ts itinerary delete <itineraryId>
 ```
 
-通过 PlanAgent 对话生成或修改行程：
+## 地图命令
 
 ```bash
-npm run cli -- plan chat new "帮我规划 3 天杭州亲子游" --userId demo-user-001
-npm run cli -- plan chat <itineraryId> "把第二天改轻松一点" --userId demo-user-001
+node -r ts-node/register src/cli/index.ts map geocode "上海外滩"
+node -r ts-node/register src/cli/index.ts map search-poi --city 上海 --keyword "经典景点" --limit 10
+node -r ts-node/register src/cli/index.ts map route --from "外滩" --to "豫园" --mode walking
 ```
 
-流式输出：
+## 计划辅助命令
 
 ```bash
-npm run cli -- plan chat <itineraryId> "把第三天和第一天互换" --stream
+node -r ts-node/register src/cli/index.ts plan validate --data '<itinerary-json>'
+node -r ts-node/register src/cli/index.ts plan estimate-budget --data '<itinerary-json>'
+node -r ts-node/register src/cli/index.ts plan optimize-order --data '<itinerary-json>'
 ```
 
-可选参数：
-
-- `--userId <userId>`：指定用户 ID，默认 `demo-user-001`。
-- `--context <text>`：注入当前行程摘要。
-- `--history <json>`：注入聊天历史，必须是数组 JSON。
-- `--stream`：改用 JSON Lines 流式输出。
+`plan chat` / `plan generate` 已废弃。自然语言理解和行程生成由外层 Codex Agent 完成，后端 CLI 只提供确定性工具。
 
 ## 偏好命令
 
 获取用户偏好：
 
 ```bash
-npm run cli -- preference get <userId>
+node -r ts-node/register src/cli/index.ts preference get <userId>
 ```
 
 设置用户偏好：
 
 ```bash
-npm run cli -- preference set <userId> --travelStyle relaxed --budgetMin 1000 --budgetMax 6000
+node -r ts-node/register src/cli/index.ts preference set <userId> --travelStyle relaxed --budgetMin 1000 --budgetMax 6000
 ```
 
 也可以用 JSON 一次性设置：
 
 ```bash
-npm run cli -- preference set <userId> --data '{"travelStyle":"moderate","travelerCount":2,"preferredActivities":["museum","food"]}'
+node -r ts-node/register src/cli/index.ts preference set <userId> --data '{"travelStyle":"moderate","travelerCount":2,"preferredActivities":["museum","food"]}'
 ```
 
 删除用户偏好：
 
 ```bash
-npm run cli -- preference delete <userId>
+node -r ts-node/register src/cli/index.ts preference delete <userId>
 ```
 
 ## Agent 使用规则
@@ -160,12 +169,15 @@ npm run cli -- preference delete <userId>
 - `src/services/itinerary.service.ts`
 - `src/services/plan.service.ts`
 - `src/services/preference.service.ts`
+- `src/services/map.service.ts`
+- `src/services/budget.service.ts`
+- `src/services/validation.service.ts`
 
 HTTP 入口仍然位于：
 
 - `src/controllers/itinerary.controller.ts`
 - `src/controllers/preference.controller.ts`
-- `src/routes/agent.routes.ts`
+- `src/routes/agent.routes.ts`（deprecated compatibility）
 
 CLI 入口位于：
 

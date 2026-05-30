@@ -1,137 +1,155 @@
-import prisma from "../config/database";
-import { itineraryAgent } from "../agent/itinerary-agent";
-import { transformItinerary } from "../lib/itinerary-transform";
+import { AppError } from "../contracts/errors";
 import {
-  Itinerary,
-  ItineraryCreateParams,
-  ItineraryUpdateParams,
-} from "../types/itinerary";
+  ItineraryCreateInput,
+  ItineraryDayInput,
+  ItineraryUpdateInput,
+} from "../contracts/itinerary.contract";
+import {
+  createItineraryRecord,
+  deleteItineraryRecord,
+  findItineraries,
+  findItineraryById,
+  updateItineraryRecord,
+} from "../repositories/itinerary.repository";
+import { transformItinerary } from "../lib/itinerary-transform";
+import { Itinerary, ItineraryUpdateParams } from "../types/itinerary";
+import {
+  validateItineraryCreate,
+  validateItineraryUpdate,
+} from "./validation.service";
+import { estimateItineraryBudget } from "./budget.service";
 
-const itineraryInclude = {
-  days: {
-    include: {
-      activities: true,
-      meals: true,
-      accommodation: true,
-    },
-    orderBy: { dayNumber: "asc" as const },
-  },
-  flights: true,
-  hotels: true,
-};
+function dateOnly(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
 
-export async function createGeneratedItinerary(
-  params: ItineraryCreateParams
-): Promise<Itinerary> {
-  const itinerary = await itineraryAgent.generateItinerary(params);
+function addDays(date: Date, offset: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + offset);
+  return next;
+}
 
-  const savedItinerary = await prisma.itinerary.create({
-    data: {
-      userId: itinerary.userId,
-      title: itinerary.title,
-      destination: itinerary.destination,
-      startDate: new Date(itinerary.startDate),
-      endDate: new Date(itinerary.endDate),
-      description: itinerary.description,
-      totalBudget: itinerary.budget?.total,
-      status: itinerary.status,
-    },
-  });
+function dayCount(startDate: string, endDate: string): number {
+  const start = Date.parse(startDate);
+  const end = Date.parse(endDate);
+  return Math.max(1, Math.round((end - start) / 86400000) + 1);
+}
 
-  for (const dayPlan of itinerary.days) {
-    const savedDay = await prisma.itineraryDay.create({
-      data: {
-        itineraryId: savedItinerary.id,
-        dayNumber: dayPlan.dayNumber,
-        date: new Date(dayPlan.date),
-        summary: dayPlan.summary,
-      },
+function normalizeCreateDays(input: ItineraryCreateInput): ItineraryDayInput[] {
+  const start = new Date(input.startDate);
+  const totalDays = dayCount(input.startDate, input.endDate);
+  const existing = new Map<number, ItineraryDayInput>();
+
+  for (const [index, day] of input.days.entries()) {
+    existing.set(day.dayNumber ?? index + 1, {
+      ...day,
+      dayNumber: day.dayNumber ?? index + 1,
+      date: day.date ?? dateOnly(addDays(start, index)),
     });
-
-    for (const activity of dayPlan.activities) {
-      await prisma.activity.create({
-        data: {
-          itineraryDayId: savedDay.id,
-          name: activity.name,
-          description: activity.description,
-          location: activity.location.address,
-          latitude: activity.location.lat,
-          longitude: activity.location.lng,
-          startTime: activity.startTime,
-          endTime: activity.endTime,
-          estimatedCost: activity.estimatedCost,
-          category: activity.type,
-          rating: activity.rating,
-          imageUrl: activity.imageUrl,
-        },
-      });
-    }
-
-    for (const meal of dayPlan.meals) {
-      await prisma.meal.create({
-        data: {
-          itineraryDayId: savedDay.id,
-          name: meal.name,
-          type: meal.type,
-          location: meal.location.address,
-          latitude: meal.location.lat,
-          longitude: meal.location.lng,
-          estimatedCost: meal.estimatedCost,
-        },
-      });
-    }
   }
 
-  return {
-    ...itinerary,
-    id: savedItinerary.id,
-    createdAt: savedItinerary.createdAt.toISOString(),
-    updatedAt: savedItinerary.updatedAt.toISOString(),
+  return Array.from({ length: totalDays }, (_, index) => {
+    const dayNumber = index + 1;
+    return (
+      existing.get(dayNumber) ?? {
+        dayNumber,
+        date: dateOnly(addDays(start, index)),
+        activities: [],
+        meals: [],
+        summary: `第 ${dayNumber} 天`,
+      }
+    );
+  });
+}
+
+function resolveTotalBudget(input: Pick<ItineraryCreateInput | ItineraryUpdateInput, "budget" | "totalBudget" | "days" | "destination" | "startDate" | "endDate">): number | undefined {
+  const estimated = estimateItineraryBudget(input);
+  return estimated.total || undefined;
+}
+
+export async function createItinerary(input: unknown): Promise<Itinerary> {
+  const data = validateItineraryCreate(input);
+  const normalizedData: ItineraryCreateInput = {
+    ...data,
+    title: data.title ?? `${data.destination}行程`,
+    days: normalizeCreateDays(data),
   };
+
+  const saved = await createItineraryRecord(
+    normalizedData,
+    resolveTotalBudget(normalizedData)
+  );
+
+  if (!saved) {
+    throw new AppError("COMMAND_ERROR", "创建行程失败");
+  }
+
+  return transformItinerary(saved);
 }
 
 export async function getItineraryById(id: string): Promise<Itinerary | null> {
-  const itinerary = await prisma.itinerary.findUnique({
-    where: { id },
-    include: itineraryInclude,
-  });
-
+  const itinerary = await findItineraryById(id);
   return itinerary ? transformItinerary(itinerary) : null;
 }
 
-export async function listItineraries(userId?: string): Promise<Itinerary[]> {
-  const itineraries = await prisma.itinerary.findMany({
-    where: userId ? { userId } : {},
-    include: {
-      days: {
-        include: {
-          activities: true,
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+export async function requireItineraryById(id: string): Promise<Itinerary> {
+  const itinerary = await getItineraryById(id);
+  if (!itinerary) {
+    throw new AppError("ITINERARY_NOT_FOUND", "行程不存在", 2, 404);
+  }
+  return itinerary;
+}
 
+export async function listItineraries(userId?: string): Promise<Itinerary[]> {
+  const itineraries = await findItineraries(userId);
   return itineraries.map(transformItinerary);
+}
+
+export async function updateItinerary(
+  id: string,
+  input: unknown
+): Promise<Itinerary> {
+  const data = validateItineraryUpdate(input);
+  const existing = await requireItineraryById(id);
+
+  if (data.endDate && !data.startDate && Date.parse(data.endDate) < Date.parse(existing.startDate)) {
+    throw new AppError("VALIDATION_ERROR", "endDate 不能早于 startDate", 5, 400);
+  }
+
+  if (data.startDate && !data.endDate && Date.parse(existing.endDate) < Date.parse(data.startDate)) {
+    throw new AppError("VALIDATION_ERROR", "endDate 不能早于 startDate", 5, 400);
+  }
+
+  const totalBudget =
+    data.totalBudget !== undefined
+      ? data.totalBudget
+      : data.budget || data.days
+        ? resolveTotalBudget({
+            ...data,
+            destination: data.destination ?? existing.destination,
+            startDate: data.startDate ?? existing.startDate,
+            endDate: data.endDate ?? existing.endDate,
+          })
+        : undefined;
+
+  const saved = await updateItineraryRecord(id, data, totalBudget);
+
+  if (!saved) {
+    throw new AppError("ITINERARY_NOT_FOUND", "行程不存在", 2, 404);
+  }
+
+  return transformItinerary(saved);
 }
 
 export async function updateItineraryMeta(
   id: string,
   data: Pick<ItineraryUpdateParams, "title" | "description" | "status">
-) {
-  return prisma.itinerary.update({
-    where: { id },
-    data: {
-      title: data.title,
-      description: data.description,
-      status: data.status,
-      updatedAt: new Date(),
-    },
-  });
+): Promise<Itinerary> {
+  return updateItinerary(id, data);
 }
 
 export async function deleteItineraryById(id: string): Promise<void> {
-  await prisma.itinerary.delete({
-    where: { id },
-  });
+  await requireItineraryById(id);
+  await deleteItineraryRecord(id);
 }
+

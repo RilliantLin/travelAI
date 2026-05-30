@@ -1,42 +1,31 @@
 import { Request, Response } from 'express';
-import { ItineraryCreateParams } from '../types/itinerary';
+import { AppError } from '../contracts/errors';
 import {
-  createGeneratedItinerary,
+  createItinerary as createItineraryService,
   deleteItineraryById,
   getItineraryById,
   listItineraries,
-  updateItineraryMeta,
+  updateItinerary as updateItineraryService,
 } from '../services/itinerary.service';
 
 export const createItinerary = async (req: Request, res: Response) => {
   try {
-    const { destination, startDate, endDate, title, description, preferences } = req.body;
-    const userId = req.body.userId || 'default-user';
-
-    if (!destination || !startDate || !endDate) {
-      return res.status(400).json({
-        success: false,
-        error: 'Destination, start date, and end date are required',
-      });
-    }
-
-    const params: ItineraryCreateParams = {
-      destination,
-      startDate,
-      endDate,
-      userId,
-      title,
-      description,
-      preferences,
-    };
-
-    const itinerary = await createGeneratedItinerary(params);
+    const itinerary = await createItineraryService(req.body);
 
     res.json({
       success: true,
       data: itinerary,
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.message,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
     console.error('Create itinerary error:', error);
     res.status(500).json({
       success: false,
@@ -93,15 +82,23 @@ export const getUserItineraries = async (req: Request, res: Response) => {
 export const updateItinerary = async (req: Request, res: Response) => {
   try {
     const id = typeof req.params.id === 'string' ? req.params.id : '';
-    const { title, description, status } = req.body;
 
-    const itinerary = await updateItineraryMeta(id, { title, description, status });
+    const itinerary = await updateItineraryService(id, req.body);
 
     res.json({
       success: true,
       data: itinerary,
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.message,
+        code: error.code,
+        details: error.details,
+      });
+    }
+
     console.error('Update itinerary error:', error);
     res.status(500).json({
       success: false,
@@ -121,6 +118,14 @@ export const deleteItinerary = async (req: Request, res: Response) => {
       message: 'Itinerary deleted successfully',
     });
   } catch (error) {
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        error: error.message,
+        code: error.code,
+      });
+    }
+
     console.error('Delete itinerary error:', error);
     res.status(500).json({
       success: false,

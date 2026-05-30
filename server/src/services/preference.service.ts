@@ -1,6 +1,11 @@
 import { z } from "zod";
-import prisma from "../config/database";
 import { CACHE_KEYS, CACHE_TTL, deleteCache, getCached, setCache } from "../config/redis";
+import {
+  deletePreferenceRecord,
+  getPreferenceRecord,
+  upsertPreferenceRecord,
+} from "../repositories/preference.repository";
+import { getUserById } from "../repositories/user.repository";
 
 export const preferenceSchema = z.object({
   budgetMin: z.number().min(0).optional(),
@@ -29,9 +34,7 @@ export async function getPreferenceByUserId(userId: string) {
     return cachedPreference;
   }
 
-  const preference = await prisma.userPreference.findUnique({
-    where: { userId },
-  });
+  const preference = await getPreferenceRecord(userId);
 
   if (preference) {
     await setCache(cacheKey, preference, CACHE_TTL.USER_PREFERENCES);
@@ -43,22 +46,13 @@ export async function getPreferenceByUserId(userId: string) {
 export async function upsertPreference(userId: string, input: unknown) {
   const validatedData = preferenceSchema.parse(input);
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-  });
+  const user = await getUserById(userId);
 
   if (!user) {
     return null;
   }
 
-  const preference = await prisma.userPreference.upsert({
-    where: { userId },
-    update: validatedData,
-    create: {
-      userId,
-      ...validatedData,
-    },
-  });
+  const preference = await upsertPreferenceRecord(userId, validatedData);
 
   await setCache(getPreferenceCacheKey(userId), preference, CACHE_TTL.USER_PREFERENCES);
 
@@ -66,17 +60,13 @@ export async function upsertPreference(userId: string, input: unknown) {
 }
 
 export async function deletePreferenceByUserId(userId: string): Promise<boolean> {
-  const preference = await prisma.userPreference.findUnique({
-    where: { userId },
-  });
+  const preference = await getPreferenceRecord(userId);
 
   if (!preference) {
     return false;
   }
 
-  await prisma.userPreference.delete({
-    where: { userId },
-  });
+  await deletePreferenceRecord(userId);
 
   await deleteCache(getPreferenceCacheKey(userId));
 
@@ -84,9 +74,7 @@ export async function deletePreferenceByUserId(userId: string): Promise<boolean>
 }
 
 export async function getPreferenceForRecommendation(userId: string) {
-  const preference = await prisma.userPreference.findUnique({
-    where: { userId },
-  });
+  const preference = await getPreferenceRecord(userId);
 
   if (!preference) {
     return null;
