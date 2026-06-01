@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:prd": "dotenvx run -f .env.prd -- next dev",
     "build": "next build",
     "build:prd": "next build",
     "start": "next start",
